@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Truncates every over-long `#` comment block in this repo's workflow and action files to its first line.
+// Truncates every over-long `#` comment block in this repo's workflow and
+// action files to its earliest line.
 
 import {readFileSync, writeFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
@@ -35,7 +36,6 @@ function walk(root, relative, found) {
 	return found;
 }
 
-// The blocks running past the limit, as [startIndex, endIndex] pairs.
 function overLongBlocks(lines) {
 	const blocks = [];
 	let start = -1;

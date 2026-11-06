@@ -30,9 +30,9 @@ func TestBrewClassName(t *testing.T) {
 	}
 }
 
-// TestBrewEligibleProjectName: digit-leading names are structurally
+// TestBrewEligibleProjectName. Digit-leading names are structurally
 // unloadable by brew (Formulary.class_s("7zip") == "7zip", not a legal Ruby
-// constant, and no substitute class satisfies the loader), so they must be
+// constant, and no substitute class satisfies the loader). They must be
 // excluded from brew entirely rather than emitted as broken Ruby.
 func TestBrewEligibleProjectName(t *testing.T) {
 	t.Serial()

@@ -1,5 +1,5 @@
 # A tracked build artifact drifts from the source it claims to come from,
-# silently, for as long as nobody rebuilds -- which is how the admin dashboard
+# silently, for as long as nobody rebuilds. That drift is how the admin dashboard
 # shipped a bundle nothing in frontend/src produced. These run after generate,
 # so a tracked generated file shows up as a dirty tree.
 #
@@ -42,3 +42,14 @@ tests:
 	  outputs:
 		stdout:
 			- "no stacked inline-script comments"
+
+	- desc: no action or workflow string that holds an expression is over GitHub's length limit
+	  cmd: node .github/scripts/expression-length.ts .github/actions/*/action.yml .github/workflows/*.yml
+	  outputs:
+		stdout:
+			- "every expression string is at most 21000 characters"
+	- desc: an inline action script fits GitHub's expression limit
+	  cmd: node .github/scripts/script-length.ts .github/actions/*/action.yml .github/workflows/*.yml
+	  outputs:
+		stdout:
+			- "every inline script is within the expression limit"

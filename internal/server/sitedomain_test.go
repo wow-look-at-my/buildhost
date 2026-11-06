@@ -192,9 +192,8 @@ func TestSiteDomain_DispatchAndServe(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "dl-site", body)
 
-	resp, body = siteGet(t, env, siteTestDomain, "/healthz")
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.Contains(t, body, `"status":"ok"`)
+	resp, _ = siteGet(t, env, siteTestDomain, "/healthz")
+	require.Equal(t, http.StatusNotFound, resp.StatusCode, "a site-domain host is CDN-cached, so it serves no health")
 
 	// /__sso on a project subdomain reaches the SSO handler (literal path beats
 	resp, body = siteGet(t, env, "nosuch."+siteTestDomain, "/__sso?code=garbage")

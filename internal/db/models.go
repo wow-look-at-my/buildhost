@@ -54,6 +54,18 @@ type DeletedBranch struct {
 	DeletedAt time.Time `json:"deleted_at"`
 }
 
+type CacheEntry struct {
+	RepoID     string    `json:"repo_id"`
+	Ref        string    `json:"ref"`
+	Key        string    `json:"key"`
+	RepoPath   string    `json:"repo_path"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+	UsedAt     time.Time `json:"used_at"`
+	Reads      int64     `json:"reads"`
+}
+
 type DownloadCount struct {
 	ArtifactID int64 `json:"artifact_id"`
 	Count      int64 `json:"count"`
@@ -90,6 +102,26 @@ type GoproxyVersion struct {
 	ZipStorageKey string     `json:"zip_storage_key"`
 	ZipSize       int64      `json:"zip_size"`
 	FetchedAt     time.Time  `json:"fetched_at"`
+}
+
+type MirrorBlob struct {
+	Upstream   string    `json:"upstream"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+	UsedAt     time.Time `json:"used_at"`
+	Reads      int64     `json:"reads"`
+}
+
+type MirrorTag struct {
+	Upstream   string    `json:"upstream"`
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	CheckedAt  time.Time `json:"checked_at"`
 }
 
 type OciBlobLink struct {
@@ -147,6 +179,7 @@ type Project struct {
 	DefaultBranch string     `json:"default_branch"`
 	CreateService bool       `json:"create_service"`
 	AptDepends    string     `json:"apt_depends"`
+	Depends       string     `json:"depends"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
@@ -155,6 +188,13 @@ type ProjectAlias struct {
 	Name      string    `json:"name"`
 	ProjectID int64     `json:"project_id"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type ProjectVisibility struct {
+	ProjectID   int64      `json:"project_id"`
+	Mode        Visibility `json:"mode"`
+	AutoPrivate bool       `json:"auto_private"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type Release struct {
@@ -172,6 +212,12 @@ type Release struct {
 	PublishedAt *time.Time `json:"published_at"`
 }
 
+type ReleaseVisibility struct {
+	ReleaseID int64      `json:"release_id"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 type RetentionSetting struct {
 	ID            int64     `json:"id"`
 	KeepN         int64     `json:"keep_n"`
@@ -181,6 +227,17 @@ type RetentionSetting struct {
 	BranchTtlDays int64     `json:"branch_ttl_days"`
 }
 
+type RunFile struct {
+	RepoID     string     `json:"repo_id"`
+	RunID      string     `json:"run_id"`
+	Name       string     `json:"name"`
+	StorageKey string     `json:"storage_key"`
+	Size       int64      `json:"size"`
+	CreatedAt  time.Time  `json:"created_at"`
+	Reads      int64      `json:"reads"`
+	ReadAt     *time.Time `json:"read_at"`
+}
+
 type RunLock struct {
 	RepoID     string    `json:"repo_id"`
 	RunID      string    `json:"run_id"`
@@ -188,6 +245,22 @@ type RunLock struct {
 	Name       string    `json:"name"`
 	Value      string    `json:"value"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+type RunStorageRun struct {
+	RepoID    string     `json:"repo_id"`
+	RunID     string     `json:"run_id"`
+	RepoPath  string     `json:"repo_path"`
+	CreatedAt time.Time  `json:"created_at"`
+	UsedAt    time.Time  `json:"used_at"`
+	CheckedAt *time.Time `json:"checked_at"`
+	EndedAt   *time.Time `json:"ended_at"`
+}
+
+type ServerSetting struct {
+	Name      string    `json:"name"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Site struct {
@@ -202,4 +275,17 @@ type Site struct {
 	IsPublic   bool      `json:"is_public"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+type SiteVisibility struct {
+	ProjectID int64      `json:"project_id"`
+	Branch    string     `json:"branch"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type VisibilityFolder struct {
+	Prefix    string     `json:"prefix"`
+	Mode      Visibility `json:"mode"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

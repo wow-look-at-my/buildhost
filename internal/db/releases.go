@@ -1,3 +1,5 @@
+// releases.go holds the releases code.
+
 package db
 
 import (
@@ -32,6 +34,8 @@ func (d *DB) CreateRelease(ctx context.Context, r *Release) error {
 	return nil
 }
 
+// NextVersionNum answers the number after the highest one in the project's number line.
+// For an auto project that line spans its family, the repo project and each "<repo>/<child>" auto project.
 func (d *DB) NextVersionNum(ctx context.Context, projectID int64) (int64, error) {
 	maxNum, err := d.q.GetMaxVersionNum(ctx, projectID)
 	if err != nil {
@@ -58,7 +62,7 @@ func (d *DB) GetRelease(ctx context.Context, projectID int64, version string) (*
 }
 
 // GetLatestRelease resolves the apex "latest" release (no version, no explicit
-// branch): the newest published release on the project's default branch
+// branch). The newest published release on the project's default branch
 // (projects.default_branch, default "master"), so a push to a feature branch
 // cannot hijack "latest". A project whose default branch has no published
 func (d *DB) GetLatestRelease(ctx context.Context, projectID int64) (*Release, error) {

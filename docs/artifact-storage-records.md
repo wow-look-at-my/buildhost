@@ -21,7 +21,9 @@ await recordSite(octokit, core, context, { server, project, branch, version: git
 
 ## Why source and not a step
 
-An earlier draft made this a reusable action invoked as its own step. That draft was rejected. A separate step is a thing a pipeline can be assembled without. It also failed concretely. GitHub resolves a composite's `uses:` refs eagerly, before any step's `if:`. An unpublished tag therefore broke a job that had recording turned off. Shared source keeps the POST inlined in the step it always ran in.
+An earlier draft made this a reusable action invoked as its own step. That draft was rejected. A separate step is a thing a pipeline can be assembled without. It also failed concretely. GitHub resolves a composite's `uses:` refs eagerly, before any step's `if:`. An unpublished tag therefore broke a job that had recording turned off.
+
+Shared source keeps the POST inlined in the step it always ran in.
 
 ## What suppresses a record
 
@@ -48,15 +50,19 @@ The rest of this document.md. Paragraph breaks follow the bold-lead structure. N
 
 The POST happens INSIDE each publish step's own script. In `buildhost-publish` that is the `publish` step, where `postStorageRecords` drains the records `uploadAndPublish` accumulated. In `buildhost-publish-site` it is the `publish` step, where `finishPublish` calls `postStorageRecord`. `finishPublish` is `async` for exactly that reason, and every call site awaits it. In `buildhost-publish-docker` it is the `Push to buildhost (chunked)` step, right after the CLI push it describes.
 
-An earlier draft factored this into a reusable `wow-look-at-my/actions@artifact-storage-record#latest`, invoked as its own step. That draft was rejected, because a separate step is a thing a pipeline can be assembled without. It also failed concretely. GitHub resolves a composite's `uses:` refs EAGERLY, before it evaluates any step's `if:`. An unpublished tag therefore broke `upload-artifact-action-e2e`, while that job had recording turned off. That proved the dependency was real while the recording was not. The composites' step lists are therefore unchanged from before this feature.
+An earlier draft factored this into a reusable `wow-look-at-my/actions@artifact-storage-record#latest`, invoked as its own step. That draft was rejected, because a separate step is a thing a pipeline can be assembled without. It also failed concretely. GitHub resolves a composite's `uses:` refs EAGERLY, before it evaluates any step's `if:`. An unpublished tag therefore broke `upload-artifact-action-e2e`, while that job had recording turned off. That proved the dependency was real while the recording was not.
+
+The composites' step lists are therefore unchanged from before this feature.
 
 ## The low-level chain records too
 
-`buildhost-publish-release` is the final step of the create-release, upload-artifact, publish-release chain. A publisher that does not use `buildhost-publish` assembles that chain, as gosmopolitan, cc-marketplace and competent-search-thing do. That step records every artifact the publish just made public.
+`buildhost-publish-release` is the last step of the create-release, upload-artifact, publish-release chain. A publisher that does not use `buildhost-publish` assembles that chain, as gosmopolitan, cc-marketplace and competent-search-thing do. That step records every artifact the publish just made public.
 
-Without it, that whole path stored real, permanent, consumer-visible artifacts and recorded nothing. To treat those blocks as "components, not the pipeline" was wrong, because for those repos the chain IS the pipeline.
+Without it, that whole path stored real, permanent, consumer-visible artifacts and recorded nothing. To treat those blocks as "components, not the pipeline" was incorrect, because for those repos the chain IS the pipeline.
 
-It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client. It adds `artifacts`. Publish already loaded them for its no-artifacts check. As a result, that costs nothing. `TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
+It needs the artifact list to do this, and there is no artifacts-listing endpoint. **Both `PublishRelease` and `GetRelease` therefore return `publishedRelease`.** That type embeds the `db.Release`, so every pre-existing top-level field is unchanged for an older client. It adds `artifacts`. Publish already loaded them for its no-artifacts check. As a result, that costs nothing.
+
+`TestPublishRelease_ReturnsPublishedArtifacts` and `TestGetRelease_ReturnsArtifacts` pin it.
 
 A publish response that carries no `artifacts` FAILS outright. There is deliberately no retry. It once had one. A publish served mid-rollout by the previous container came back without the field, and failed an unrelated repo's CI. That was observed live: cc-marketplace published mid-rollout and failed, while two sibling repos published minutes later and succeeded.
 
@@ -72,7 +78,7 @@ A publish whose response carries no artifacts comes from an older server. The ac
 
 There is no `create_storage_record` input on any composite. The calling job needs `artifact-metadata: write`. That grant is ADDITIVE, and a job-level `permissions:` block replaces the workflow-level one. Without the grant the publish FAILS, with a message that names the exact permission.
 
-A warn-and-continue path was rejected as an opt-out by neglect. The publish then stays green while the org's page silently falls behind reality. That is precisely the deceptive green the requirements-are-CI-checks rule forbids.
+Neglect rejected a warn-and-continue path. The publish then stays green while the org's page silently falls behind reality. That is accurately the deceptive green the requirements-are-CI-checks rule forbids.
 
 This is a deliberate divergence from the deployment steps' graceful-skip contract. A deployment is a nicety. A record of what the registry now holds is part of the publish being complete. The LOW-LEVEL blocks post no record. create-release, upload-artifact and publish-release are among them. They are components, and the top-level composites are the pipeline.
 
@@ -80,7 +86,7 @@ This is a deliberate divergence from the deployment steps' graceful-skip contrac
 
 ## API field constraints that are easy to get wrong
 
-These come from GitHub's OpenAPI description, and each has bitten.
+These come from GitHub's OpenAPI description, and each bit.
 
 `github_repository` is the repo NAME only. Its pattern is `^[A-Za-z0-9.\-_]+$`. An `owner/repo` value is therefore rejected outright. It fails every publish. The org is already the endpoint's path parameter.
 
@@ -92,7 +98,7 @@ These come from GitHub's OpenAPI description, and each has bitten.
 
 ## The recorded digest is always the sha256 of the bytes as UPLOADED
 
-This is the load-bearing subtlety. buildhost strips and repackages on demand. For an ELF the default `raw` download is therefore NOT byte-identical to the upload. A non-ELF artifact, such as an APE, a PE or a Mach-O, is served as-is, so it happens to match.
+This is the load-bearing subtlety. buildhost strips and repackages on demand. For an ELF the default `raw` download is therefore NOT byte-same to the upload. A non-ELF artifact, such as an APE, a PE or a Mach-O, is served as-is, so it happens to match.
 
 `debug=1` is the download that returns the uploaded bytes verbatim. `buildhost-publish` therefore points each record's `artifact_url` at `.../{project}?v=&os=&arch=&debug=1`. A storage record whose URL serves bytes that hash to something other than its digest is worse than no record. The uploaded digest is also the one a future `actions/attest` provenance subject covers.
 

@@ -25,7 +25,7 @@ func (f *fakeDeleter) MarkDeleted(_ context.Context, githubRepo, project, versio
 	return f.err
 }
 
-// Evicting a release makes its artifacts unfetchable, so their storage
+// Evicting a release makes its artifacts unfetchable. Their storage
 // records must be retracted -- otherwise the org's linked artifacts page
 // keeps asserting buildhost holds bytes it deleted.
 func TestRun_EnforceMarksEvictedRecordsDeleted(t *testing.T) {
@@ -79,7 +79,7 @@ func TestRun_NoDeleterReportsUnmarkedRatherThanSilentlySkipping(t *testing.T) {
 	assert.Contains(t, rep.RecordErrors[0], "no artifact-metadata record deleter configured")
 }
 
-// A failing sink is counted and its reason surfaced; eviction itself still
+// A failing sink is counted and its reason surfaced. Eviction itself still
 // succeeds, because the bytes are already gone and refusing to GC over a
 // GitHub outage would be worse.
 func TestRun_DeleterFailureCountedAndReported(t *testing.T) {
@@ -104,8 +104,8 @@ func TestRun_DeleterFailureCountedAndReported(t *testing.T) {
 }
 
 // A project with no recorded github_repo has no addressable record: nothing was
-// ever posted under a known org, so there is nothing to retract and no failure
-// to report either.
+// ever posted under a known org. There is nothing to retract and no failure to
+// report either.
 func TestRun_ProjectWithoutGithubRepoIsNotCounted(t *testing.T) {
 	t.Serial()
 	d, store, p := setup(t)
@@ -126,7 +126,7 @@ func TestRun_ProjectWithoutGithubRepoIsNotCounted(t *testing.T) {
 	assert.Equal(t, 0, rep.RecordsUnmarked)
 }
 
-// A dry run must not retract anything -- it reports the work it WOULD do, so an
+// A dry run must not retract anything -- it reports the work it WOULD do. An
 // operator sees the record count before committing to the deletion.
 func TestPlan_ReportsRecordsItWouldMarkWithoutCalling(t *testing.T) {
 	t.Serial()
@@ -150,7 +150,7 @@ func TestPlan_ReportsRecordsItWouldMarkWithoutCalling(t *testing.T) {
 }
 
 // useTestServer points the API base at a local httptest server and gives the
-// HTTP client a proxy-free transport: the default transport honours HTTP_PROXY
+// HTTP client a proxy-free transport. The default transport honours HTTP_PROXY
 // from the environment, which in a sandboxed dev environment can intercept even
 func useTestServer(t *testing.T, url string) func() {
 	t.Helper()

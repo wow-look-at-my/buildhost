@@ -1,4 +1,8 @@
+// Sign in with GitHub.
+
 package auth
+
+import _ "embed"
 
 import (
 	"fmt"
@@ -18,7 +22,7 @@ import (
 var (
 	githubAuthorizeURL = "https://github.com/login/oauth/authorize"
 	githubTokenURL     = "https://github.com/login/oauth/access_token"
-	githubAPIBase      = "https://api.github.com"
+	githubAPIBase      = GitHubAPI
 )
 
 const (
@@ -89,13 +93,14 @@ func githubAuth() *GitHubAuth {
 func githubAuthEnabled() bool { return githubAuth() != nil }
 
 // loginRedirectURL is the absolute URL a browser needing to authenticate is sent
-// to: the apex sign-in entrypoint, carrying a next= back to the full original
-// URL (which may be on a service subdomain). A request on the configured site
+// to. That is the apex sign-in entrypoint, carrying a next= back to the full
+// original URL (which may be on a service subdomain). A request on the configured site
 func loginRedirectURL(r *http.Request) string {
 	next := RequestBaseURL(r) + r.URL.RequestURI()
 	base := apexRootURL(r)
 	if requestSiteApex(r) != "" {
-		pd := PrimaryDomain()
+		// A site-domain browser must be sent to a real apex to sign in.
+		pd := PinnedPrimaryDomain()
 		if pd == "" {
 			return ""
 		}
@@ -139,9 +144,10 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 	}
 	next := safeNextURL(r, r.URL.Query().Get("next"))
 	// Instant cross-domain handoff: the browser already holds a valid session on
-	// this apex and is heading to a site-domain destination -- skip the OAuth
-	// consent round-trip and hand the existing session across via /__sso. The
-	// session MAC alone is not enough to hand over: its embedded GitHub token
+	// this apex. The browser is heading to a site-domain destination -- skip the
+	// OAuth consent round-trip and hand the existing session across via /__sso.
+	// The session MAC alone is not enough to hand over: its embedded GitHub
+	// token
 	if c, err := r.Cookie(sessionCookieName); err == nil {
 		if _, ghToken, ok := verifySession(c.Value); ok && siteHandoffDest(next) != nil {
 			if _, lerr := g.fetchLogin(r.Context(), ghToken); lerr == nil {
@@ -156,7 +162,7 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 
 	nonce := randToken()
 	// Bind the destination into a signed state and tie the flow to this browser
-	// via a short-lived cookie (double-submit), so the callback can't be forged
+	// via a short-lived cookie (double-submit). So the callback can't be forged
 	// or pointed elsewhere.
 	http.SetCookie(w, &http.Cookie{
 		Name: stateCookieName, Value: nonce, Path: signinCallbackPath,
@@ -176,11 +182,11 @@ func handleSigninStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSigninCallback completes the OAuth round-trip. No failure here may be
-// a dead end: the browser is sitting on the fixed callback URL, where a
-// reload re-submits the consumed single-use code, so every exit either
-// restarts the flow or renders a page with a way to. And never with a 5xx --
-// Cloudflare replaces origin 5xx bodies with its own bare error page, which
-// used to strand
+// a dead end. The browser is sitting on the fixed callback URL. This happens
+// where a reload re-submits the consumed single-use code. So every exit
+// either restarts the flow or renders a page with a way to. And never with a
+// 5xx -- Cloudflare replaces origin 5xx bodies with its own bare error page,
+// which used to strand
 func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	g := githubAuth()
 	if g == nil {
@@ -226,7 +232,8 @@ func handleSigninCallback(w http.ResponseWriter, r *http.Request) {
 	login, err := g.fetchLogin(r.Context(), token)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "github signin: fetching user identity failed", "err", err)
-		signinFailedHTML(w, r, http.StatusForbidden, "Could not read your GitHub identity.", st.next)
+		// The cause goes on the page: an operator reads it there without the server log.
+		signinFailedHTML(w, r, http.StatusForbidden, "Could not read your GitHub identity: "+err.Error(), st.next)
 		return
 	}
 	slog.InfoContext(r.Context(), "github signin: signed in", "login", login)
@@ -268,28 +275,13 @@ func signinFailedPage(w http.ResponseWriter, _ *http.Request, status int, reason
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	esc := template.HTMLEscapeString
-	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign-in failed</title>
-<style>
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 34rem; margin: 12vh auto; padding: 0 1.25rem; line-height: 1.55; }
-  h1 { font-size: 1.4rem; margin-bottom: .5rem; }
-  a.btn { display: inline-block; margin-top: 1rem; padding: .55rem .9rem; border: 1px solid; border-radius: .4rem; text-decoration: none; }
-</style>
-</head>
-<body>
-<h1>Sign-in failed</h1>
-<p>%s</p>
-<div><a class="btn" href="%s">Try signing in again</a></div>
-</body>
-</html>
-`, esc(reason), esc(retry))
+	fmt.Fprintf(w, signinFailedPageHtml, esc(reason), esc(retry))
 }
 
 func handleSignout(w http.ResponseWriter, r *http.Request) {
 	clearCookie(w, r, sessionCookieName, "/")
 	http.Redirect(w, r, safeNextURL(r, r.URL.Query().Get("next")), http.StatusSeeOther)
 }
+
+//go:embed signin-failed-page.html
+var signinFailedPageHtml string

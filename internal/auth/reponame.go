@@ -1,3 +1,5 @@
+// reponame.go holds the reponame code.
+
 package auth
 
 import (
@@ -39,7 +41,7 @@ func renamedNamespaceName(name, root string) string {
 // never mutates project state.
 //
 // A taken target name is NOT resolved here: that is a duplicate from a rename
-// predating this reconcile, and folding release histories together has no safe
+// predating this reconcile. Folding release histories together has no safe
 // default. `buildhost project merge` does it deliberately, under a snapshot.
 func reconcileRepoNamespace(ctx context.Context, database *db.DB, repo OIDCRepoIdentity) {
 	if repo.RepoID == "" || repo.RepoPath == "" {

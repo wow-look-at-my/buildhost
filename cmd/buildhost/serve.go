@@ -1,7 +1,10 @@
+// Refuse to start on a configuration that cannot serve correctly, rather than degrade silently at request time.
+
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -17,9 +20,14 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/brew"
 	"github.com/wow-look-at-my/buildhost/internal/buildinfo"
+	"github.com/wow-look-at-my/buildhost/internal/cicache"
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
+	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
+	"github.com/wow-look-at-my/buildhost/internal/runfiles"
+	"github.com/wow-look-at-my/buildhost/internal/secretserver"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
@@ -36,9 +44,36 @@ var serveCmd = &cobra.Command{
 	Short: "Start the registry server",
 	RunE: func(_ *cobra.Command, _ []string) error {
 		cfg := config.Load()
+		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
+			return fmt.Errorf("create temp dir: %w", err)
+		}
 
-		// Make the Go runtime aware of the container's memory cgroup so the GC
-		// runs harder as we approach the limit instead of letting the heap grow
+		database, err := db.Open(cfg.DBPath)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer database.Close()
+
+		// The dashboard's stored settings sit in front of the environment.
+		stored, err := database.ServerSettings(context.Background())
+		if err != nil {
+			return err
+		}
+		config.SetStored(stored)
+		cfg = config.Load()
+		config.MarkStarted()
+		// Refuse to start on a configuration that cannot serve correctly, rather
+		// than degrade silently at request time.
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+
+		// Make the Go runtime aware of the container's memory cgroup. Do this
+		// so the GC runs harder as we approach the limit instead of letting the
+		// heap grow
 		if limit, err := memlimit.SetGoMemLimitWithOpts(
 			memlimit.WithRatio(0.9),
 			memlimit.WithProvider(memlimit.FromCgroup),
@@ -62,19 +97,6 @@ var serveCmd = &cobra.Command{
 			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
 		}
 
-		if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
-			return fmt.Errorf("create data dir: %w", err)
-		}
-		if err := os.MkdirAll(cfg.DataDir+"/tmp", 0o755); err != nil {
-			return fmt.Errorf("create temp dir: %w", err)
-		}
-
-		database, err := db.Open(cfg.DBPath)
-		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer database.Close()
-
 		if err := database.SeedRetentionSettings(context.Background(), db.RetentionSettings{
 			KeepN:         cfg.RetentionKeepN,
 			RecencyHours:  int(cfg.RetentionRecencyGuard.Hours()),
@@ -88,6 +110,11 @@ var serveCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("init storage: %w", err)
 		}
+		if n, freed, err := fsStore.SweepTemp(time.Now()); err != nil {
+			slog.Error("storage: temp file sweep failed", "removed", n, "bytes", freed, "err", err)
+		} else if n > 0 {
+			slog.Warn("storage: removed temp files an interrupted upload left", "removed", n, "bytes", freed)
+		}
 		store := storage.NewTraced(fsStore)
 
 		if err := sites.ConvertTarSites(context.Background(), database, store, cfg.DataDir+"/tmp"); err != nil {
@@ -96,6 +123,8 @@ var serveCmd = &cobra.Command{
 
 		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer stop()
+		ctx, restart := context.WithCancelCause(ctx)
+		defer restart(nil)
 
 		errc := make(chan error, 2)
 
@@ -107,6 +136,7 @@ var serveCmd = &cobra.Command{
 				Date:    buildinfo.Date(),
 				RepoURL: "https://github.com/wow-look-at-my/buildhost",
 			})
+			adminDash.SetRestart(func() { restart(errRestartRequested) })
 			adminHTTP = adminDash.NewHTTPServer()
 			go func() {
 				slog.Info("starting admin dashboard", "addr", cfg.AdminListenAddr)
@@ -117,6 +147,20 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
+		if p := cfg.GitHubAppProblem(); p != "" {
+			slog.Error("GitHub App credential ignored; fix it on the admin Settings page", "problem", p)
+		}
+		switch {
+		case cfg.SecretServerToken == "":
+			slog.Error("no BUILDHOST_SECRET_SERVER_TOKEN: buildhost gets no GitHub credential from secret-server", "github_credential", auth.GitHubCredentialSource())
+		case cfg.GitHubToken != "" || cfg.HasGitHubApp():
+			slog.Warn("secret-server: the GitHub credential in the environment takes precedence; the machine token is not used")
+		default:
+			src := &secretserver.Source{URL: secretserver.URL, Token: cfg.SecretServerToken}
+			if err := src.Start(ctx); err != nil {
+				return err
+			}
+		}
 		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
 		go func() {
 			if err := brew.BackfillHistoryDigests(ctx); err != nil {
@@ -134,6 +178,34 @@ var serveCmd = &cobra.Command{
 		startRetentionSweeper(ctx, cfg, database, store)
 		// Sweep expired chunked-upload sessions (abandoned spool files).
 		uploads.StartJanitor(ctx)
+		(&runfiles.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.RunFilesKeep,
+			MinFreePercent: cfg.RunFilesMinFreePercent,
+			RunEnded:       auth.GitHubRunEnded,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
+		(&cicache.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.CacheKeep,
+			MinFreePercent: cfg.CacheMinFreePercent,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
+		(&mirror.Janitor{
+			DB:             database,
+			Store:          store,
+			DataDir:        cfg.DataDir,
+			Keep:           cfg.MirrorKeep,
+			MinFreePercent: cfg.MirrorMinFreePercent,
+			Disk:           diskusage.Get,
+			Busy:           func() bool { return admin.InflightWrites() > 0 },
+		}).Start(ctx)
 
 		select {
 		case err := <-errc:
@@ -162,14 +234,20 @@ var serveCmd = &cobra.Command{
 			return shutdownErr
 		}
 		slog.Info("shutdown complete")
+		// A non-zero exit makes the container restart policy start the server again.
+		if errors.Is(context.Cause(ctx), errRestartRequested) {
+			return errRestartRequested
+		}
 		return nil
 	},
 }
 
+var errRestartRequested = errors.New("restart requested from the admin dashboard")
+
 // startRetentionSweeper launches the background GC sweeper when a positive
 // interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is
-// set, defers a tick while writes are in flight (the same counter /ready-to-update
-// uses), and exits when ctx is cancelled at shutdown.
+// set, defers a tick. This holds while writes are in flight (the same counter
+// /ready-to-update uses), and exits when ctx is cancelled at shutdown.
 func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.DB, store storage.Storage) {
 	if cfg.RetentionInterval <= 0 {
 		return

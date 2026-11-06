@@ -62,7 +62,7 @@ func TestVerifyToken_TrustedIssuer_AllowedEvent(t *testing.T) {
 }
 
 // TestVerifyToken_TrustedIssuer_OrgCaseInsensitive proves the org allowlist
-// matches case-insensitively: a lowercase allowlist entry ("pazerop") still
+// matches case-insensitively. A lowercase allowlist entry ("pazerop") still
 // authorizes a subject carrying GitHub's canonical mixed-case org ("PazerOP").
 // This is the exact PazerOP/scratch PR-preview scenario -- a pure casing
 // mismatch must not silently block auto-provisioning.

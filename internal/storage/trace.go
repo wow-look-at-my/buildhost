@@ -1,3 +1,5 @@
+// trace.go holds the trace code.
+
 package storage
 
 import (

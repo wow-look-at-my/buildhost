@@ -1,3 +1,5 @@
+// middleware.go holds the middleware code.
+
 package uploads
 
 import (
@@ -18,12 +20,12 @@ const (
 
 // ResolveSessionBody makes every existing upload endpoint accept a chunked
 // upload session in place of a request body. It runs between authentication
-// and routing: a mutating request carrying ?upload_session=<id> (and an empty
-// body) has its Body swapped for the session's spool file, so the endpoint's
-// own routing, project auth, size caps, and storage logic all run unchanged
-// -- they read the spool instead of the network. On a 2xx response the
-// session is consumed (spool deleted); on failure it is kept so the client
-// can retry the finalize, abort it, or let the TTL sweep collect it.
+// and routing. A mutating request carrying ?upload_session=<id> (and an empty
+// body) has its Body swapped for the session's spool file. So the endpoint's
+// own routing, project auth, size caps, and storage logic all run unchanged.
+// They read the spool instead of the network. On a 2xx response the session
+// is consumed (spool deleted). On failure it is kept so the client can retry
+// the finalize, abort it, or let the TTL sweep collect it.
 func ResolveSessionBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get(SessionParam)
@@ -46,7 +48,7 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 			jsonError(w, http.StatusNotFound, ErrNotFound.Error())
 			return
 		}
-		if r.ContentLength != 0 {
+		if !bodyEmpty(r) {
 			jsonError(w, http.StatusBadRequest, "request body must be empty when finalizing an upload session")
 			return
 		}
@@ -95,6 +97,20 @@ func ResolveSessionBody(next http.Handler) http.Handler {
 
 func mutatingMethod(m string) bool {
 	return m == http.MethodPost || m == http.MethodPut || m == http.MethodPatch
+}
+
+// bodyEmpty reports whether r carries no body. So an unknown length is
+// decided by a read of one byte, not refused.
+func bodyEmpty(r *http.Request) bool {
+	if r.ContentLength == 0 || r.Body == nil || r.Body == http.NoBody {
+		return true
+	}
+	if r.ContentLength > 0 {
+		return false
+	}
+	var probe [1]byte
+	read, _ := io.ReadFull(r.Body, probe[:])
+	return read == 0
 }
 
 // expectedSHA256 returns the client-declared digest (query param or header),

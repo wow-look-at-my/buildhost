@@ -107,7 +107,7 @@ func TestSiteDomain_CommitRef(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
-// The "~" sigil this scheme launched with still resolves: it 301s to the "@"
+// The "~" sigil this scheme launched with still resolves. It 301s to the "@"
 // spelling of the same URL, so every published ~ link keeps working while there
 
 func TestSiteDomain_LegacySigilRedirects(t *testing.T) {

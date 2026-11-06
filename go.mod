@@ -1,4 +1,4 @@
-module github.com/wow-look-at-my/buildhost
+module github.com/wow-look-at-my/buildhost // go-toolchain:generate=9c2e97b85c99
 
 go 1.26
 

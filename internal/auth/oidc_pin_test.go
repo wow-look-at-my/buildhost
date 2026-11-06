@@ -227,7 +227,7 @@ func TestOIDCPin_MismatchedIDs_HiddenReadGets404(t *testing.T) {
 }
 
 // A token without IDs (an issuer that mints neither the repository_id claims
-// nor immutable subjects) is deliberately NOT rejected by the pin: GitHub
+// nor immutable subjects) is deliberately NOT rejected by the pin. GitHub
 // controls which format a repo's tokens get, and the token already passed the
 // issuer/org/event gates. Documented allow.
 func TestOIDCPin_PinnedProject_IDLessTokenAllowed(t *testing.T) {

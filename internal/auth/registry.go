@@ -1,3 +1,5 @@
+// registry.go holds the registry code.
+
 package auth
 
 import (
@@ -5,8 +7,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
+	"github.com/wow-look-at-my/go-containers/set"
 	"github.com/wow-look-at-my/router"
 )
 
@@ -39,9 +43,20 @@ func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
 // SiteDomain is the optional dedicated domain for project static sites
 func SiteDomain() string { return sharedSiteDomain }
 
-// PrimaryDomain is the apex carrying the GitHub OAuth callback
+// PrimaryDomain is the apex carrying the GitHub OAuth callback (BUILDHOST_PRIMARY_DOMAIN); "" when unset.
 func PrimaryDomain() string { return sharedPrimaryDomain }
 
+// PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable
+// host, or "" when no single host is canonical.
+func PinnedPrimaryDomain() string {
+	if sharedPrimaryDomain == config.PrimaryDomainAny {
+		return ""
+	}
+	return sharedPrimaryDomain
+}
+
+// OnReady runs fn once auth.Init has wired the shared dependencies (DB,
+// store, data dir).
 func OnReady(fn func()) {
 	readyFuncs = append(readyFuncs, fn)
 }
@@ -115,17 +130,39 @@ func HandleRawPrimary(pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(pattern, router.Allow, primaryOnly(handler))
 }
 
-// primaryOnly gates a handler to the configured primary apex (exact host match,
-// port stripped, case-folded; PrimaryDomain() is stored lowercased). The gate
-// runs BEFORE requireProject on purpose: a request on a foreign host must
+// primaryOnly gates a handler to the configured primary apex (exact host
+// match, port stripped, case-folded; PrimaryDomain() is stored lowercased).
 func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if pd := PrimaryDomain(); pd != "" && strings.ToLower(hostNoPort(r.Host)) != pd {
+		pd := PrimaryDomain()
+		pinned := pd != "" && pd != config.PrimaryDomainAny
+		if pinned && strings.ToLower(hostNoPort(r.Host)) != pd {
 			http.NotFound(w, r)
 			return
 		}
 		h(w, r)
 	}
+}
+
+// cachedServiceLabels are the service subdomains that a CDN caches.
+var cachedServiceLabels = set.Of(
+	"apt", "brew", "dl", "docker", "git",
+	"goproxy", "npm", "oci", "sites", "static",
+)
+
+// IsCachedContentHost reports whether host (port allowed) is a service
+// subdomain or a site-domain host. A host-agnostic probe must refuse these
+// hosts, because the CDN can serve a stale copy of its answer.
+func IsCachedContentHost(host string) bool {
+	host = strings.ToLower(hostNoPort(host))
+	if pd := PrimaryDomain(); pd != "" && host == pd {
+		return false
+	}
+	if siteApexOf(host) != "" {
+		return true
+	}
+	dot := strings.IndexByte(host, '.')
+	return dot > 0 && cachedServiceLabels.Contains(host[:dot])
 }
 
 // servicePattern turns a path-only service pattern into a host+path pattern

@@ -9,6 +9,15 @@ buildhost bootstrap          # Creates initial admin token (only works when no t
 buildhost bootstrap --name admin-token
 ```
 
+## Settings
+
+The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Clear it to fall back to the environment, then the default. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
+
+- The upload limits apply at once. Every other setting applies at the next start. The page marks such a setting "restart pending" and has a **Start server** button. The button shuts down gracefully and exits non-zero, so the container start policy starts the server again.
+- A change after which `Config.Validate` fails is refused. A server that cannot start takes the dashboard down with it.
+- `BUILDHOST_LISTEN_ADDR`, `BUILDHOST_ADMIN_LISTEN_ADDR`, `BUILDHOST_DATA_DIR` and `BUILDHOST_DB_PATH` stay environment only. The server needs them before the database opens, or a bad stored value locks the operator out of the dashboard.
+- A secret's value never goes back to the browser. It is stored in plain text in the database. A database backup holds it.
+
 ## Listing routes
 
 ```bash
@@ -19,7 +28,9 @@ Routes are printed exactly as registered. A main-domain route is path-only (`/ap
 
 ## Backing up the database
 
-The admin dashboard's Storage page has a "Download database backup" button. It calls `GET /api/backup` on the admin port. That endpoint streams a `VACUUM INTO` snapshot of the live database as `buildhost-<UTC timestamp>.db`. The server keeps serving and writing during the snapshot. The snapshot is written beside `BUILDHOST_DB_PATH` and deleted after the download. The blob store under `BUILDHOST_DATA_DIR/blobs` is NOT included. Back that directory up separately. To restore, stop the server and put the file at `BUILDHOST_DB_PATH`.
+The admin dashboard's Storage page has a "Download database backup" button. It calls `GET /api/backup` on the admin port. That endpoint streams a `VACUUM INTO` snapshot of the live database as `buildhost-<UTC timestamp>.db`. The server keeps serving and writing during the snapshot. The snapshot is written beside `BUILDHOST_DB_PATH` and deleted after the download. The blob store under `BUILDHOST_DATA_DIR/blobs` is NOT included.
+
+Back that directory up separately. To restore, stop the server and put the file at `BUILDHOST_DB_PATH`.
 
 ## Serving
 
@@ -27,15 +38,27 @@ The admin dashboard's Storage page has a "Download database backup" button. It c
 BUILDHOST_LISTEN_ADDR=:8080 buildhost serve
 ```
 
-Each service is accessed via a subdomain derived from the incoming request's `Host` header: `apt.example.com`, `brew.example.com`, `git.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `goproxy.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain. No domain configuration is required -- the server dispatches by matching the first label of the Host header against known service names.
+Each service is accessed via a subdomain derived from the incoming request's `Host` header: `apt.example.com`, `brew.example.com`, `git.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `goproxy.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain. Matching the first label of the Host header against known service names require no domain configuration.
 
-Optional domain envs exist for the project-site-subdomain scheme. See `docs/sites.md`. `BUILDHOST_SITE_DOMAIN` serves each DNS-label-valid project's site at `https://<project>.<domain>/`. Unset, it adds no routes at all. `BUILDHOST_PRIMARY_DOMAIN` is the apex that carries the GitHub OAuth callback. It is the sign-in target for a private site-domain resource. Left unset while SITE_DOMAIN is set, a site-domain browser gets the plain JSON 401. Setting it also scopes the web UI and `/api/v1` to that apex. See `docs/security/github-signin.md`. DNS for the site domain needs the apex plus a wildcard `*.<domain>`, both pointed at the same origin with Host passthrough. The proxy needs a wildcard TLS cert.
+Optional domain envs exist for the project-site-subdomain scheme. See `docs/sites.md`. `BUILDHOST_SITE_DOMAIN` serves each DNS-label-valid project's site at `https://<project>.<domain>/`. Unset, it adds no routes at all. `BUILDHOST_PRIMARY_DOMAIN` is the apex that carries the GitHub OAuth callback. It is the sign-in target for a private site-domain resource.
+
+Left unset while SITE_DOMAIN is set, a site-domain browser gets the plain JSON 401. Setting it also scopes the web UI and `/api/v1` to that apex. See `docs/security/github-signin.md`. DNS for the site domain needs the apex plus a wildcard `*.<domain>`, both pointed at the same origin with Host passthrough. The proxy needs a wildcard TLS cert.
+
+## GitHub credential
+
+buildhost's own GitHub calls (run status for run files, default branches, collaborator checks, the Go proxy's GitHub source) go through github-state-mirror, which refuses a call with no token. Without one, no run ever learns that it ended, and the Run Files page shows each such run as unknown. The credential comes from secret-server (`https://secrets.pazer.io`). Set `BUILDHOST_SECRET_SERVER_TOKEN` (on the Settings page or in the environment) to an `sst_` machine token entitled to `BUILDHOST_GITHUB_TOKEN`, or to both `BUILDHOST_GITHUB_APP_ID`. And `BUILDHOST_GITHUB_APP_PRIVATE_KEY`. buildhost fetches them at startup and every few minutes. A rotated secret takes effect without a start.
+
+A failed fetch keeps the credential in use and retries every minute.
+
+The same names set in the environment take precedence, and the machine token is then not used. The admin dashboard's **GitHub** page shows which credential is in use and what the last fetch did. `/healthz` reports it as `github_credential`.
 
 ## Go module proxy
 
-`goproxy.{domain}` serves the Go module download protocol. It needs no configuration to run: private module prefixes default to `github.com/<org>` for each `BUILDHOST_OIDC_ORGS` entry, and it uses buildhost's existing GitHub credential (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, else `BUILDHOST_GITHUB_TOKEN`).
+`goproxy.{domain}` serves the protocol of the Go module download. It needs no configuration to run: private module prefixes default to `github.com/<org>` for each `BUILDHOST_OIDC_ORGS` entry, and it uses buildhost's existing GitHub credential (`BUILDHOST_GITHUB_APP_ID` + `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, else `BUILDHOST_GITHUB_TOKEN`).
 
-**Set `BUILDHOST_GOPROXY_READINESS_MODULE` to a private module.** Without it the readiness check can confirm only that a credential EXISTS. A credential that authenticates but carries no authorization for the org then looks identical to a working one. That is exactly how a proxy that served zero private modules went unnoticed. With it set, the check resolves that module every few minutes. It reports unready when it cannot. `BUILDHOST_GOPROXY_PRIVATE_PREFIXES` overrides which prefixes count as private.
+**Set `BUILDHOST_GOPROXY_READINESS_MODULE` to a private module.** Without it the readiness check can confirm only that a credential EXISTS. A credential that authenticates but carries no authorization for the org then looks same to a working one. That is exactly how a proxy that served zero private modules went unnoticed. With it set, the check resolves that module every few minutes. It reports unready when it cannot.
+
+`BUILDHOST_GOPROXY_PRIVATE_PREFIXES` overrides which prefixes count as private.
 
 No third-party module mirror is configured, and buildhost never picks one: a mirror sees the path of every dependency routed through it. Modules this proxy does not serve are answered 404, the module protocol's "try the next entry", so clients use `GOPROXY=https://goproxy.{domain},direct` and fetch everything else from its origin. `BUILDHOST_GOPROXY_UPSTREAM` opts in to a mirror if you want one. Depth: `docs/formats/goproxy.md`.
 

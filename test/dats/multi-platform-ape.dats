@@ -3,7 +3,7 @@
 # server serves the whole file: setup publishes the APE, the tests only ask questions about it.
 #
 # Needs curl and jq, which is why a workflow runs this --no-sandbox rather than
-# letting the dats phase sandbox it into an image that has neither.
+# letting the dats phase sandbox it into an image. That image has neither.
 #
 # see docs/multi-platform-artifacts.md
 
@@ -29,6 +29,8 @@ shared:
 				PORT=$(( 18100 + 2 * off ))
 				BUILDHOST_LISTEN_ADDR="127.0.0.1:$PORT"; export BUILDHOST_LISTEN_ADDR
 				BUILDHOST_ADMIN_LISTEN_ADDR="127.0.0.1:$(( PORT + 1 ))"; export BUILDHOST_ADMIN_LISTEN_ADDR
+				# Required. This suite addresses the server by several Hosts, so none is canonical: "*" is the explicit opt-in.
+				BUILDHOST_PRIMARY_DOMAIN="*"; export BUILDHOST_PRIMARY_DOMAIN
 				BASE="http://localhost:$PORT"
 				rm -rf "$BUILDHOST_DATA_DIR"
 				TOKEN="$($RUN bootstrap --name dats | tail -1)"

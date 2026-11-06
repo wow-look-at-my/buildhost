@@ -1,3 +1,5 @@
+// RetentionSettings is the UI-editable retention policy (stored as a single row).
+
 package db
 
 import (
@@ -7,6 +9,8 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // RetentionSettings is the stored retention policy. docs/retention.md describes each field.
@@ -78,10 +82,10 @@ type BlobRef struct {
 	Size int64
 }
 
-// EvictReleases deletes the given releases and all of their child rows -- each
+// EvictReleases deletes the given releases. All of their child rows -- each
 // release's artifacts, their packaged artifacts and download counts, and any oci
-// tags pointing at them -- in a single transaction, then determines which of
-// their content-addressed blobs are no longer referenced by any surviving row.
+// tags pointing at them. In a single transaction, then determines which of their
+// content-addressed blobs are no longer referenced by any surviving row.
 //
 // When commit is true the deletions are committed and the returned blobs are safe
 // for the caller to delete from storage. When commit is false the transaction is
@@ -91,20 +95,47 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 	if len(releaseIDs) == 0 {
 		return nil, 0, nil
 	}
+	// A dry run changes nothing, so it keeps one transaction and reports the exact total.
+	if !commit {
+		freed, candidates, err := d.evictBatch(ctx, releaseIDs, false)
+		return freed, len(candidates), err
+	}
 
+	// Each batch commits alone, so the writer connection is free between batches.
+	seen := set.New[string]()
+	for start := 0; start < len(releaseIDs); start += evictBatchSize {
+		batch := releaseIDs[start:min(start+evictBatchSize, len(releaseIDs))]
+		part, candidates, err := d.evictBatch(ctx, batch, true)
+		for key := range candidates {
+			seen.Add(key)
+		}
+		freed = append(freed, part...)
+		if err != nil {
+			return freed, seen.Len(), err
+		}
+	}
+	sort.Slice(freed, func(i, j int) bool { return freed[i].Key < freed[j].Key })
+	return freed, seen.Len(), nil
+}
+
+// evictBatchSize is how many releases one eviction transaction deletes.
+var evictBatchSize = 25
+
+// evictBatch deletes the releases in one transaction and answers the blobs nothing references afterwards, with every candidate blob it looked at.
+func (d *DB) evictBatch(ctx context.Context, releaseIDs []int64, commit bool) (freed []BlobRef, candidates map[string]int64, err error) {
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, 0, fmt.Errorf("begin tx: %w", err)
+		return nil, nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	q := New(tx)
 
-	candidates := make(map[string]int64) // key -> max recorded size
+	candidates = make(map[string]int64) // key -> max recorded size
 	for _, id := range releaseIDs {
 		rows, err := q.ListReleaseBlobKeys(ctx, id)
 		if err != nil {
-			return nil, 0, fmt.Errorf("collect blob keys for release %d: %w", id, err)
+			return nil, nil, fmt.Errorf("collect blob keys for release %d: %w", id, err)
 		}
 		for _, row := range rows {
 			if row.K == "" {
@@ -115,14 +146,14 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 			}
 		}
 		if err := deleteReleaseRows(ctx, q, id); err != nil {
-			return nil, 0, err
+			return nil, nil, err
 		}
 	}
 
 	for key, size := range candidates {
 		n, err := q.IsBlobReferenced(ctx, key)
 		if err != nil {
-			return nil, 0, fmt.Errorf("check blob references: %w", err)
+			return nil, nil, fmt.Errorf("check blob references: %w", err)
 		}
 		if n == 0 {
 			freed = append(freed, BlobRef{Key: key, Size: size})
@@ -132,12 +163,12 @@ func (d *DB) EvictReleases(ctx context.Context, releaseIDs []int64, commit bool)
 
 	if commit {
 		if err := tx.Commit(); err != nil {
-			return nil, 0, fmt.Errorf("commit: %w", err)
+			return nil, nil, fmt.Errorf("commit: %w", err)
 		}
 	}
 	// When commit is false the deferred Rollback discards every change.
 
-	return freed, len(candidates), nil
+	return freed, candidates, nil
 }
 
 func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
@@ -167,7 +198,8 @@ func (d *DB) IsBlobReferenced(ctx context.Context, key string) (bool, error) {
 	return n != 0, err
 }
 
-// ListEvictableReleases returns the published releases the policy evicts.
+// ListEvictableReleases returns the published releases the policy evicts. A
+// release pinned by an oci tag or a pushed-docker artifact is not returned.
 func (d *DB) ListEvictableReleases(ctx context.Context, p EvictionPolicy) ([]ListEvictableReleasesRow, error) {
 	return d.q.ListEvictableReleases(ctx, ListEvictableReleasesParams{
 		RecencyCutoff:   sqliteDatetime(p.RecencyCutoff),
@@ -181,6 +213,12 @@ func (d *DB) ListEvictableReleases(ctx context.Context, p EvictionPolicy) ([]Lis
 // older than the cutoff.
 func (d *DB) ListAbandonedReleases(ctx context.Context, cutoff time.Time) ([]ListAbandonedReleasesRow, error) {
 	return d.q.ListAbandonedReleases(ctx, sqliteDatetime(cutoff))
+}
+
+// ListNonDefaultBranchReleases returns the releases older than the cutoff on a
+// branch other than their project's default, for projects linked to GitHub.
+func (d *DB) ListNonDefaultBranchReleases(ctx context.Context, cutoff time.Time) ([]ListNonDefaultBranchReleasesRow, error) {
+	return d.q.ListNonDefaultBranchReleases(ctx, sqliteDatetime(cutoff))
 }
 
 // SumReclaimableBytes returns an upper bound on the logical bytes keep-N eviction
@@ -212,6 +250,11 @@ func (d *DB) ListOCIBlobFiles(ctx context.Context) ([]ListOCIBlobFilesRow, error
 // ListGoproxyBlobFiles returns every cached Go module zip.
 func (d *DB) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFilesRow, error) {
 	return d.q.ListGoproxyBlobFiles(ctx)
+}
+
+// ListMirrorBlobFiles returns every blob the registry mirror holds.
+func (d *DB) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFilesRow, error) {
+	return d.q.ListMirrorBlobFiles(ctx)
 }
 
 // ListReleaseRetentionFacts returns, for every release, the facts the eviction

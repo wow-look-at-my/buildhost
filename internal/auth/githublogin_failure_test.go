@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,8 +12,8 @@ import (
 )
 
 // A state that fails signature verification carries nothing trustworthy, so
-// there is no automatic redirect -- but the page still offers a fresh sign-in
-// (to the apex root), not a bare dead end.
+// there is no automatic redirect. However, the page still offers a fresh
+// sign-in (to the apex root), not a bare dead end.
 func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
 	t.Serial()
 	d := openTestDB(t)
@@ -33,7 +34,7 @@ func TestSigninCallback_ForgedState_TerminalPage(t *testing.T) {
 }
 
 // GitHub reporting an exchange failure (wrong client secret, consumed or
-// expired code) must NOT surface as a 5xx: Cloudflare replaces origin 5xx
+// expired code) must NOT surface as a 5xx. Cloudflare replaces origin 5xx
 // bodies with its own bare error page, which used to strand the user at the
 // callback URL with no way forward. Instead: a 4xx page with a retry link.
 func TestSigninCallback_ExchangeFailure_RecoverablePage(t *testing.T) {
@@ -79,7 +80,8 @@ func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
 			w.Write([]byte(`{"access_token":"gho_test"}`))
 			return
 		}
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte("unauthorized: could not validate GitHub credential"))
 	}))
 	defer gh.Close()
 	origToken, origAPI := githubTokenURL, githubAPIBase
@@ -100,6 +102,39 @@ func TestSigninCallback_UserFetchFailure_RecoverablePage(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Contains(t, rec.Body.String(), signinStartPath+"?next="+url.QueryEscape(next))
+	// The page names the upstream answer, so the cause is visible without the server log.
+	assert.Contains(t, rec.Body.String(), "/user -&gt; 401: unauthorized: could not validate GitHub credential")
+	assert.NotContains(t, rec.Body.String(), "gho_test", "the page must never show the token")
+}
+
+// A network failure names the host buildhost could not reach.
+func TestSigninCallback_UserFetchUnreachable_NamesCause(t *testing.T) {
+	t.Serial()
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"access_token":"gho_test"}`))
+	}))
+	defer gh.Close()
+	dead := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close()
+	origToken, origAPI := githubTokenURL, githubAPIBase
+	githubTokenURL, githubAPIBase = gh.URL, deadURL
+	defer func() { githubTokenURL, githubAPIBase = origToken, origAPI }()
+
+	d := openTestDB(t)
+	initTestMiddleware(t, d)
+	mw.GitHub = NewGitHubAuth("cid", "secret")
+
+	state := signState(signinState{nonce: "n1", next: "/x"}, time.Now().Add(time.Minute))
+	req := httptest.NewRequest("GET", signinCallbackPath+"?code=abc&state="+url.QueryEscape(state), nil)
+	req.Host = "pazer.build"
+	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "n1"})
+	rec := httptest.NewRecorder()
+	handleSigninCallback(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Contains(t, rec.Body.String(), "connection refused")
+	assert.Contains(t, rec.Body.String(), strings.TrimPrefix(deadURL, "http://"))
 }
 
 // The user cancelling on GitHub (?error=access_denied) gets the same actionable

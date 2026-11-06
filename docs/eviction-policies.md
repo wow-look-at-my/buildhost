@@ -25,7 +25,7 @@ Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload
 
 buildhost currently **never deletes a release or artifact**. The only `DELETE FROM` statements in the codebase target `sites`, `api_tokens`, and `oidc_policies` (`internal/db/queries/{sites,tokens,oidc}.sql`). There is no `DeleteRelease`, no `DeleteArtifact`, and no garbage collection. Every publish adds rows and blobs that live forever.
 
-At the time of writing the instance holds projects / releases / artifacts and the dashboard reports ~77.7 GiB "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
+At the time of writing the instance holds projects / releases / artifacts and the GiB of the dashboard reports ~77.7 "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
 
 This document proposes a design. It deliberately does **not** ship code. It exists to align on the model and the safety rules first.
 
@@ -37,7 +37,7 @@ This document proposes a design. It deliberately does **not** ship code. It exis
 
 `internal/storage/filesystem.go`:
 
-- `Put` streams to a temp file, computes the SHA-256, and uses the hex digest as the key. If a blob with that key already exists on disk it returns early (`fs.root.Stat(rel)` hit) -- **identical content is stored once**.
+- `Put` streams to a temp file, computes the SHA-256, and uses the hex digest as the key. If a blob with that key already exists on disk it returns early (`fs.root.Stat(rel)` hit) -- **same content is stored once**.
 - Blobs are zstd-compressed on disk (unless `BUILDHOST_STORAGE_COMPRESS=false`), with a `BHC\x01` magic + original-size header.
 - `Delete` is a bare `os.Remove(rel)` with **no reference counting whatsoever**.
 
@@ -73,7 +73,7 @@ if storageKey != "" {
 }
 ```
 
-Site deploys can produce byte-identical tarballs, for example multiple branches at the same commit. They then share one blob. To delete one branch removes the shared blob and breaks the other. The probability is low today. It is still the exact class of bug the eviction design must not repeat. The reference-counted approach below fixes it for free.
+Site deploys can produce byte-same tarballs, for example multiple branches at the same commit. They then share one blob. To delete one branch removes the shared blob and breaks the other. The probability is low today. It is still the exact class of bug the eviction design must not repeat. The reference-counted approach below fixes it for free.
 
 ### 2.5 Stats machinery already exists
 
@@ -117,7 +117,7 @@ SELECT EXISTS(
 
 - **Targeted sweep** (primary): only check the candidate keys produced by a delete. Cheap, runs right after eviction. No races because we only consider keys whose rows we removed.
 - **Full reconciliation** (periodic safety net): walk the storage root and delete any on-disk key that `IsBlobReferenced` says is dead.
-  - **A grace period is mandatory.** The publish path calls `Store.Put` and *then* inserts the artifact row. A window therefore exists where a blob is on disk with no DB row yet. A full sweep must skip a blob whose mtime is newer than about 24h. It then cannot delete an in-flight upload. The targeted sweep avoids this window entirely.
+  - **A grace period is mandatory.** The publish path calls `Store.Put` and *then* inserts the artifact row. A window therefore exists where a blob is on disk with no DB row yet. A full sweep must skip a blob whose mtime is newer than about 24h. It then cannot delete an in-flight upload. The targeted sweep avoids this window fully.
 
 ### 3.4 Fixing the sites bug
 
@@ -164,7 +164,7 @@ All three sit on top of the GC foundation and honor the Section multiple pins. T
 Keep the N most-recent published releases per project. Evict the older ones. The pins still apply: latest per branch, tagged, and recent.
 
 - **Pros:** predictable, easy to explain, and registry-standard, as npm dist-tags and ghcr retention are. It uses only a signal we already have, `version_num`. It bounds per-project growth directly.
-- **Cons:** it does not target a disk budget directly, so a few huge projects can still dominate. N is a blunt instrument across different projects.
+- **Cons:** it does not target a disk budget directly, so a few large projects can still dominate. N is a blunt instrument across different projects.
 - **Config:** `BUILDHOST_RETENTION_KEEP_N` (global default), optional per-project override column.
 
 ### Option B -- Age-based TTL
@@ -195,7 +195,9 @@ The phases are ordered safest first. Each phase is independently shippable and v
 
 **Phase 0 -- GC foundation (Section 3).** It adds the `DeleteRelease` cascade, the global `IsBlobReferenced`, and the targeted sweep. It also fixes the `sites/delete.go` dedup bug. There is no automatic eviction yet. This is the safe primitive that everything else calls.
 
-**Phase 1 -- Evict the regenerable cache.** A `packaged_artifacts` row is rebuilt on the next download. To drop a row older than a TTL is therefore **zero-risk**. It is likely the biggest immediate win. Every format ever requested is cached forever right now. One exception applies: keep an `oci-base-layer` entry, which is shared, cheap and hot. Config: `BUILDHOST_RETENTION_CACHE_TTL`, for example `30d`.
+**Phase 1 -- Evict the regenerable cache.** A `packaged_artifacts` row is rebuilt on the next download. To drop a row older than a TTL is therefore **zero-risk**. It is likely the biggest immediate win. Every format ever requested is cached forever right now. One exception applies: keep an `oci-base-layer` entry, which is shared, cheap and hot.
+
+Config: `BUILDHOST_RETENTION_CACHE_TTL`, for example `30d`.
 
 **Phase 2 -- Sweep abandoned unpublished releases.** Delete `published = 0` releases older than a few hours and their artifacts (failed/partial uploads). Safe by construction -- nothing serves an unpublished release.
 
@@ -239,7 +241,9 @@ Surfaces, matching existing patterns:
 
 `oci_blob_links` is **project-scoped, not release-scoped**. A pushed docker blob or manifest attaches to the project. It is shared across pushes and tags (`internal/oci/*.go`).
 
-To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained. A tagged release is pinned regardless.
+To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained.
+
+A tagged release is pinned regardless.
 
 ---
 

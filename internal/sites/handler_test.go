@@ -93,16 +93,26 @@ func TestUpload_PublicSiteFlag(t *testing.T) {
 	assert.True(t, site.IsPublic, "X-Public-Site: true should persist as public")
 
 	// The Serve route reports this branch as publicly readable.
-	assert.True(t, route{project: "priv", branch: "pr-1"}.AllowsPublicRead(context.Background(), d, proj))
-	assert.False(t, route{project: "priv", branch: "pr-1", write: true}.AllowsPublicRead(context.Background(), d, proj))
-	assert.False(t, route{project: "priv", branch: ""}.AllowsPublicRead(context.Background(), d, proj))
+	ctx := context.Background()
+	assert.Equal(t, db.VisibilityPublic, route{project: "priv", branch: "pr-1"}.BuildVisibility(ctx, d, proj))
+	assert.Equal(t, db.VisibilityAuto, route{project: "priv", branch: "pr-1", write: true}.BuildVisibility(ctx, d, proj))
+	assert.Equal(t, db.VisibilityAuto, route{project: "priv", branch: ""}.BuildVisibility(ctx, d, proj))
 
-	// Without the header a site stays private (gated).
+	// Without the header a site follows its project.
 	uploadSite(t, h, proj, "pr-2", map[string]string{"index.html": "x"})
-	gated, err := d.GetSite(context.Background(), proj.ID, "pr-2")
+	gated, err := d.GetSite(ctx, proj.ID, "pr-2")
 	require.NoError(t, err)
 	assert.False(t, gated.IsPublic)
-	assert.False(t, route{project: "priv", branch: "pr-2"}.AllowsPublicRead(context.Background(), d, proj))
+	assert.Equal(t, db.VisibilityAuto, route{project: "priv", branch: "pr-2"}.BuildVisibility(ctx, d, proj))
+
+	// An operator override beats the publish flag, and outlives a redeploy.
+	require.NoError(t, d.SetSiteVisibility(ctx, proj.ID, "pr-1", db.VisibilityPrivate))
+	assert.Equal(t, db.VisibilityPrivate, route{project: "priv", branch: "pr-1"}.BuildVisibility(ctx, d, proj))
+	require.NoError(t, d.SetSiteVisibility(ctx, proj.ID, "pr-2", db.VisibilityPublic))
+	uploadSite(t, h, proj, "pr-2", map[string]string{"index.html": "y"})
+	assert.Equal(t, db.VisibilityPublic, route{project: "priv", branch: "pr-2"}.BuildVisibility(ctx, d, proj))
+	require.NoError(t, d.SetSiteVisibility(ctx, proj.ID, "pr-1", db.VisibilityAuto))
+	assert.Equal(t, db.VisibilityPublic, route{project: "priv", branch: "pr-1"}.BuildVisibility(ctx, d, proj))
 }
 
 func TestUpload(t *testing.T) {

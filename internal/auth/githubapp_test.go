@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/router"
 )
 
 func testAppKeyPEM(t *testing.T) string {
@@ -45,33 +46,33 @@ func withStubGitHubApp(t *testing.T, h http.Handler) {
 	})
 }
 
-// goToolchainAppMux serves the App auth chain for wow-look-at-my/go-toolchain and
+// goToolchainAppRoutes serves the App auth chain for wow-look-at-my/go-toolchain and
 // records how many times each endpoint is hit.
-func goToolchainAppMux(reposAuth *string, tokenMints, repoCalls *atomic.Int32) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /repos/wow-look-at-my/go-toolchain/installation", func(w http.ResponseWriter, r *http.Request) {
+func goToolchainAppRoutes(reposAuth *string, tokenMints, repoCalls *atomic.Int32) *router.Router {
+	rt := router.New()
+	rt.HandleFunc("GET /repos/wow-look-at-my/go-toolchain/installation", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"id":42}`)
 	})
-	mux.HandleFunc("POST /app/installations/42/access_tokens", func(w http.ResponseWriter, r *http.Request) {
+	rt.HandleFunc("POST /app/installations/42/access_tokens", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		tokenMints.Add(1)
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprint(w, `{"token":"ghs_install","expires_at":"2999-01-01T00:00:00Z"}`)
 	})
-	mux.HandleFunc("GET /repos/wow-look-at-my/go-toolchain", func(w http.ResponseWriter, r *http.Request) {
+	rt.HandleFunc("GET /repos/wow-look-at-my/go-toolchain", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		repoCalls.Add(1)
 		if reposAuth != nil {
 			*reposAuth = r.Header.Get("Authorization")
 		}
 		fmt.Fprint(w, `{"default_branch":"v1"}`)
 	})
-	return mux
+	return rt
 }
 
 func TestGitHubApp_UsesInstallationToken(t *testing.T) {
 	t.Serial()
 	var reposAuth string
 	var mints, calls atomic.Int32
-	withStubGitHubApp(t, goToolchainAppMux(&reposAuth, &mints, &calls))
+	withStubGitHubApp(t, goToolchainAppRoutes(&reposAuth, &mints, &calls))
 
 	got := GitHubDefaultBranch(context.Background(), "wow-look-at-my/go-toolchain")
 	assert.Equal(t, "v1", got)
@@ -82,7 +83,7 @@ func TestGitHubApp_UsesInstallationToken(t *testing.T) {
 func TestGitHubApp_CachesInstallationToken(t *testing.T) {
 	t.Serial()
 	var mints, calls atomic.Int32
-	withStubGitHubApp(t, goToolchainAppMux(nil, &mints, &calls))
+	withStubGitHubApp(t, goToolchainAppRoutes(nil, &mints, &calls))
 
 	ctx := context.Background()
 	assert.Equal(t, "v1", GitHubDefaultBranch(ctx, "wow-look-at-my/go-toolchain"))
@@ -101,15 +102,15 @@ func TestGitHubApp_CachesInstallationToken(t *testing.T) {
 func TestGitHubApp_FallsBackToPATWhenNotInstalled(t *testing.T) {
 	t.Serial()
 	var reposAuth string
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /repos/acme/widget/installation", func(w http.ResponseWriter, r *http.Request) {
+	rt := router.New()
+	rt.HandleFunc("GET /repos/acme/widget/installation", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
-	mux.HandleFunc("GET /repos/acme/widget", func(w http.ResponseWriter, r *http.Request) {
+	rt.HandleFunc("GET /repos/acme/widget", router.Allow, func(w http.ResponseWriter, r *http.Request) {
 		reposAuth = r.Header.Get("Authorization")
 		fmt.Fprint(w, `{"default_branch":"main"}`)
 	})
-	withStubGitHubApp(t, mux)
+	withStubGitHubApp(t, rt)
 	SetGitHubToken("ghp_fallback")
 
 	got := GitHubDefaultBranch(context.Background(), "acme/widget")

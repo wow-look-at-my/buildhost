@@ -1,3 +1,5 @@
+// tap.go holds the tap code.
+
 package brew
 
 import (
@@ -59,10 +61,10 @@ func (h *Handler) ServeTap(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveTapFile is the shared tap file server. The tap contents are scoped to
-// the request's credential (public projects only when anonymous; plus the
+// the request's credential (public projects only when anonymous. Plus the
 // private projects the credential can read otherwise), and a credentialed
-// response is marked uncacheable for shared caches -- its body depends on the
-// Authorization header, and the live deployment sits behind a CDN.
+// response is marked uncacheable for shared caches. Its body depends on the
+// Authorization header. The live deployment sits behind a CDN.
 func (h *Handler) serveTapFile(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(tapSuffix(r), "/")
 	if path == "" {
@@ -128,9 +130,9 @@ func tapScopeKey(ctx context.Context) string {
 	return fmt.Sprintf("tok\x00%d\x00%s\x00%d\x00%s", t.ID, t.Name, pid, auth.OIDCProjectFrom(ctx))
 }
 
-// tapVisibleProjects computes the projects the request may see in a tap: every
-// public project, plus -- when the request carries a credential -- the private
-// projects that credential can read.
+// tapVisibleProjects computes the projects the request may see in a tap. Those
+// are every public project, plus -- when the request carries a credential --
+// the private projects that credential can read.
 func (h *Handler) tapVisibleProjects(r *http.Request) ([]db.Project, error) {
 	projects, err := h.DB.ListProjects(r.Context())
 	if err != nil {
@@ -176,7 +178,7 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), formulaLatest)
+		data, err := h.renderFormula(r, project, *release, artifacts, repackage.BrewFormulaName(project.Name), nil, formulaLatest)
 		if errors.Is(err, db.ErrNotFound) {
 			continue
 		}
@@ -198,9 +200,12 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 	for _, c := range candidates {
 		name := names[c.project.Name]
 		data := rendered[c.project.Name]
-		if folded := repackage.BrewFormulaName(c.project.Name); name != folded {
+		folded := repackage.BrewFormulaName(c.project.Name)
+		if name != folded {
 			renames[folded] = name
-			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, formulaLatest); err != nil {
+		}
+		if name != folded || dependsRenamed(c.project, names) {
+			if data, err = h.renderFormula(r, c.project, c.release, c.artifacts, name, names, formulaLatest); err != nil {
 				return nil, nil, err
 			}
 		}
@@ -220,18 +225,17 @@ func (h *Handler) buildTap(r *http.Request) (map[string][]byte, map[string]strin
 const tapRenamesFile = "formula_renames.json"
 
 // renderFormula renders one formula under the tap name formula.
-func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, mode formulaMode) ([]byte, error) {
-	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, mode)
+func (h *Handler) renderFormula(r *http.Request, project db.Project, release db.Release, artifacts []db.PlatformArtifact, formula string, names map[string]string, mode formulaMode) ([]byte, error) {
+	out, err := h.formulaForRelease(r.Context(), project, release, artifacts, auth.RequestRootURL(r), formula, names, mode)
 	if err != nil {
 		return nil, err
 	}
 	return io.ReadAll(out.Reader)
 }
 
-// tapFormulaNames maps each project with a formula to its tap formula name.
-// The name is the project's folded name, except for the only formula under a root that has no formula of its own.
-// That formula takes the topmost such root's folded name: a repo whose one binary is not named after it publishes as "<repo>/<binary>", and installs as "<repo>".
-// A root name that another formula already folds to stays with that formula.
+// tapFormulaNames maps each project with a formula to its tap formula name. The name is the project's folded name, except for the only formula under a root that
+// has no formula of its own. That formula takes the topmost such root's folded name. A repo whose one binary is not named after it publishes as
+// "<repo>/<binary>", and installs as "<repo>". A root name that another formula already folds to stays with that formula.
 func tapFormulaNames(projects []string) map[string]string {
 	own := set.New[string]()
 	folded := set.New[string]()
@@ -295,7 +299,7 @@ func (h *Handler) tapHistory(r *http.Request, names map[string]string) ([]tapHis
 			if err != nil {
 				return nil, err
 			}
-			data, err := h.renderFormula(r, project, release, artifacts, name, formulaHistory)
+			data, err := h.renderFormula(r, project, release, artifacts, name, names, formulaHistory)
 			if errors.Is(err, db.ErrNotFound) || errors.Is(err, errDigestPending) {
 				continue
 			}

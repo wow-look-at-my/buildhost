@@ -3,13 +3,14 @@
 #
 # Clients, on purpose. crane (go-containerregistry) is daemon-free, so this
 # runs the same way locally and on a runner. Docker is exercised as well,
-# because "pullable" is a claim about the client people actually use, and
-# buildhost's layers are zstd -- which Docker reads only through the containerd
+# because "pullable" is a claim about the client people actually use.
+# Buildhost's layers are zstd -- which Docker reads only through the containerd
 # image store. crane alone proved the half that was never in doubt.
 #
-# The workflow builds the netcheck entrypoint, installs crane, maps the OCI
-# host in /etc/hosts and turns on the containerd image store; $NETCHECK_BIN and
-# $BUILDHOST_BIN come from it. Needs curl, crane and docker, so --no-sandbox.
+# The workflow builds the netcheck entrypoint and installs crane. The workflow
+# also maps the OCI host in /etc/hosts and turns on the containerd image store.
+# $NETCHECK_BIN and $BUILDHOST_BIN come from it. Needs curl, crane and docker,
+# so --no-sandbox.
 #
 # see docs/formats/oci.md
 
@@ -32,6 +33,8 @@ shared:
 			BUILDHOST_DB_PATH="$WORK/data/buildhost.db"; export BUILDHOST_DB_PATH
 			BUILDHOST_LISTEN_ADDR=":$PORT"; export BUILDHOST_LISTEN_ADDR
 			BUILDHOST_ADMIN_LISTEN_ADDR=""; export BUILDHOST_ADMIN_LISTEN_ADDR
+			# Required. This suite addresses the server by several Hosts, so none is canonical: "*" is the explicit opt-in.
+			BUILDHOST_PRIMARY_DOMAIN="*"; export BUILDHOST_PRIMARY_DOMAIN
 			TOKEN="$($RUN bootstrap --name e2e | tail -n1)"
 			test -n "$TOKEN" || { echo "no token from bootstrap" >&2; exit 1; }
 			# setsid: the server leads its own process group, so teardown takes

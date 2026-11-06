@@ -1,3 +1,5 @@
+// sso.go holds the sso code.
+
 package auth
 
 import (
@@ -110,7 +112,7 @@ func siteHandoffDest(next string) *url.URL {
 }
 
 // mintSiteHandoff mints a single-use handoff code for a sign-in whose
-// destination is on the configured site domain and returns the absolute
+// destination is on the configured site domain. It returns the absolute
 // /__sso redemption URL to redirect the browser to. It returns "" when the
 // destination is not a site-domain URL (the caller then redirects to next
 // directly, the ordinary same-domain flow). sessionValue is the signed
@@ -179,12 +181,11 @@ func ssoFailedHTML(w http.ResponseWriter, r *http.Request, status int, reason, n
 	signinFailedPage(w, r, status, reason, primarySigninURL(r, next))
 }
 
-// primarySigninURL is the sign-in entrypoint on the primary domain, carrying an
-// optional next. Falls back to this request's own apex when no primary domain
-// is configured (then sign-in is a same-domain concern).
+// primarySigninURL is the sign-in entrypoint on the primary domain, carrying
+// an optional next.
 func primarySigninURL(r *http.Request, next string) string {
 	base := apexRootURL(r)
-	if pd := PrimaryDomain(); pd != "" {
+	if pd := PinnedPrimaryDomain(); pd != "" {
 		base = RequestScheme(r) + "://" + pd
 	}
 	u := base + signinStartPath

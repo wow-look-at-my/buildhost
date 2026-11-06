@@ -96,11 +96,23 @@ func (q *Queries) GetLatestPublishedReleaseOnDefaultBranch(ctx context.Context, 
 }
 
 const getMaxVersionNum = `-- name: GetMaxVersionNum :one
-SELECT CAST(COALESCE(MAX(version_num), 0) AS INTEGER) AS max_version_num FROM releases WHERE project_id = ?
+SELECT CAST(COALESCE(MAX(r.version_num), 0) AS INTEGER) AS max_version_num
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+JOIN (
+    SELECT id, versioning,
+        CASE WHEN instr(name, '/') > 0 THEN substr(name, 1, instr(name, '/') - 1) ELSE name END AS family
+    FROM projects WHERE projects.id = ?
+) self
+WHERE p.id = self.id
+    OR (self.versioning = 'auto' AND p.versioning = 'auto'
+        AND (p.name = self.family OR substr(p.name, 1, length(self.family) + 1) = self.family || '/'))
 `
 
-func (q *Queries) GetMaxVersionNum(ctx context.Context, projectID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getMaxVersionNum, projectID)
+// An auto project shares one number line with every auto project of its family: "repo" and each "repo/<binary>".
+// A build numbers the release in "repo" and publishes "repo/<binary>" under that number, so the number must be new in both.
+func (q *Queries) GetMaxVersionNum(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getMaxVersionNum, id)
 	var max_version_num int64
 	err := row.Scan(&max_version_num)
 	return max_version_num, err

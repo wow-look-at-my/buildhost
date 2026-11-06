@@ -1,3 +1,5 @@
+// jsSnippetsOrigin serves the js-snippets library the dashboard imports.
+
 package admin
 
 import (
@@ -57,7 +59,12 @@ type Server struct {
 
 	staticFS  fs.FS
 	indexHTML []byte
+
+	restart func()
 }
+
+// SetRestart sets what the dashboard's restart button calls.
+func (s *Server) SetRestart(f func()) { s.restart = f }
 
 func New(cfg config.Config, database *db.DB, store storage.Storage, build BuildInfo) *Server {
 	staticFS, _ := fs.Sub(content, "static")
@@ -112,6 +119,11 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/projects/{name}/merge-plan", router.Allow, s.apiMergePlan)
 	mux.HandleFunc("POST /api/projects/{name}/merge", router.Allow, s.apiMerge)
 	mux.HandleFunc("PUT /api/projects/{name}/versioning", router.Allow, s.apiSetVersioning)
+	mux.HandleFunc("PUT /api/projects/{name}/visibility", router.Allow, s.apiSetProjectVisibility)
+	mux.HandleFunc("PUT /api/projects/{name}/releases/{version}/visibility", router.Allow, s.apiSetReleaseVisibility)
+	mux.HandleFunc("PUT /api/projects/{name}/site-visibility", router.Allow, s.apiSetSiteVisibility)
+	mux.HandleFunc("GET /api/visibility-folders", router.Allow, s.apiVisibilityFolders)
+	mux.HandleFunc("PUT /api/visibility-folders", router.Allow, s.apiSetVisibilityFolder)
 	mux.HandleFunc("GET /api/projects/{name}/site-files", router.Allow, s.apiSiteFiles)
 	mux.HandleFunc("GET /api/projects/{name}", router.Allow, s.apiProject)
 	mux.HandleFunc("GET /api/duplicates", router.Allow, s.apiDuplicates)
@@ -131,7 +143,17 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/retention", router.Allow, s.apiRetention)
 	mux.HandleFunc("PUT /api/retention", router.Allow, s.apiUpdateRetention)
 	mux.HandleFunc("GET /api/retention/inventory", router.Allow, s.apiRetentionInventory)
+	mux.HandleFunc("GET /api/run-files", router.Allow, s.apiRunFiles)
+	mux.HandleFunc("GET /api/cache", router.Allow, s.apiCache)
+	mux.HandleFunc("GET /api/mirror", router.Allow, s.apiMirror)
 	mux.HandleFunc("POST /api/retention/run", router.Allow, s.apiRunRetention)
+	mux.HandleFunc("GET /api/retention/deleted-branches", router.Allow, s.apiDeletedBranches)
+	mux.HandleFunc("POST /api/retention/deleted-branches", router.Allow, s.apiRunDeletedBranches)
+	mux.HandleFunc("GET /api/github-credential", router.Allow, s.apiGitHubCredential)
+	mux.HandleFunc("GET /api/settings", router.Allow, s.apiSettings)
+	mux.HandleFunc("PUT /api/settings/{name}", router.Allow, s.apiSetSetting)
+	mux.HandleFunc("DELETE /api/settings/{name}", router.Allow, s.apiDeleteSetting)
+	mux.HandleFunc("POST /api/restart", router.Allow, s.apiRestart)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 
 	mux.HandleFunc("GET /{path...}", router.Allow, s.serveSPA)
@@ -153,13 +175,17 @@ func (s *Server) ListenAndServe() error {
 	return s.NewHTTPServer().ListenAndServe()
 }
 
+// jsSnippetsOrigin serves the js-snippets library the dashboard imports.
+const jsSnippetsOrigin = "https://sites.pazer.build"
+
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
-		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'")
+		// The charts are js-snippets modules, imported at run time from the library site.
+		w.Header().Set("Content-Security-Policy", "default-src 'self' data: 'unsafe-inline'; script-src 'self' 'unsafe-inline' "+jsSnippetsOrigin)
 		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Permissions-Policy", "interest-cohort=()")
 		next.ServeHTTP(w, r)

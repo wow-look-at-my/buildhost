@@ -1,3 +1,5 @@
+// merge.go holds the merge code.
+
 package db
 
 import (
@@ -270,6 +272,9 @@ func (d *DB) ApplyProjectMerge(ctx context.Context, confirmed *ProjectMergePlan)
 	// Keeps every dl URL, apt package and brew formula naming the source alive.
 	if err := q.InsertProjectAlias(ctx, InsertProjectAliasParams{Name: src.Name, ProjectID: dst.ID}); err != nil {
 		return fmt.Errorf("alias %q -> %q: %w", src.Name, dst.Name, err)
+	}
+	if err := renameDepends(ctx, q, src.Name, dst.Name, dst.ID); err != nil {
+		return err
 	}
 	// The branch sync records these again for the surviving project.
 	if err := q.DeleteProjectDeletedBranches(ctx, src.ID); err != nil {

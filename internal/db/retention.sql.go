@@ -86,6 +86,9 @@ SELECT EXISTS(
     UNION ALL SELECT 1 FROM sites s               WHERE s.storage_key = ?1
     UNION ALL SELECT 1 FROM oci_blob_links obl    WHERE obl.storage_key = ?1
     UNION ALL SELECT 1 FROM goproxy_versions gv   WHERE gv.zip_storage_key = ?1
+    UNION ALL SELECT 1 FROM run_files rf          WHERE rf.storage_key = ?1
+    UNION ALL SELECT 1 FROM cache_entries ce      WHERE ce.storage_key = ?1
+    UNION ALL SELECT 1 FROM mirror_blobs mb       WHERE mb.storage_key = ?1
 ) AS referenced
 `
 
@@ -359,6 +362,109 @@ func (q *Queries) ListGoproxyBlobFiles(ctx context.Context) ([]ListGoproxyBlobFi
 			&i.ZipStorageKey,
 			&i.ZipSize,
 			&i.FetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMirrorBlobFiles = `-- name: ListMirrorBlobFiles :many
+SELECT upstream, digest, media_type, storage_key, size, created_at
+FROM mirror_blobs
+ORDER BY upstream, digest
+`
+
+type ListMirrorBlobFilesRow struct {
+	Upstream   string    `json:"upstream"`
+	Digest     string    `json:"digest"`
+	MediaType  string    `json:"media_type"`
+	StorageKey string    `json:"storage_key"`
+	Size       int64     `json:"size"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// Every blob the registry mirror holds. Mirrored content is not a project, so
+// release eviction never frees it.
+func (q *Queries) ListMirrorBlobFiles(ctx context.Context) ([]ListMirrorBlobFilesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorBlobFiles)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMirrorBlobFilesRow{}
+	for rows.Next() {
+		var i ListMirrorBlobFilesRow
+		if err := rows.Scan(
+			&i.Upstream,
+			&i.Digest,
+			&i.MediaType,
+			&i.StorageKey,
+			&i.Size,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNonDefaultBranchReleases = `-- name: ListNonDefaultBranchReleases :many
+SELECT r.id, r.project_id, p.name AS project_name, p.github_repo, p.default_branch,
+       r.git_branch, r.version
+FROM releases r
+JOIN projects p ON p.id = r.project_id
+WHERE r.git_branch != ''
+  AND r.git_branch != p.default_branch
+  AND p.github_repo != ''
+  AND r.created_at < datetime(?1)
+ORDER BY p.name, r.git_branch, r.version_num DESC
+`
+
+type ListNonDefaultBranchReleasesRow struct {
+	ID            int64  `json:"id"`
+	ProjectID     int64  `json:"project_id"`
+	ProjectName   string `json:"project_name"`
+	GithubRepo    string `json:"github_repo"`
+	DefaultBranch string `json:"default_branch"`
+	GitBranch     string `json:"git_branch"`
+	Version       string `json:"version"`
+}
+
+// Every release, published or not, on a branch other than its project's
+// default, older than the cutoff, for a project linked to a GitHub repo. The
+// deleted-branch sweep asks GitHub which of these branches are gone.
+func (q *Queries) ListNonDefaultBranchReleases(ctx context.Context, cutoff interface{}) ([]ListNonDefaultBranchReleasesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listNonDefaultBranchReleases, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListNonDefaultBranchReleasesRow{}
+	for rows.Next() {
+		var i ListNonDefaultBranchReleasesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.ProjectName,
+			&i.GithubRepo,
+			&i.DefaultBranch,
+			&i.GitBranch,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}

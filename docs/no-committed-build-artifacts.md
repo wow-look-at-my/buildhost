@@ -10,18 +10,18 @@
 4. None of that was visible, because the *committed* `app.js` was still the old, complete bundle. It is what `go:embed` shipped, what the tests read, and what users got. The TypeScript was dead source that nothing executed.
 5. Removing the committed artifacts (correctly — they are build output) made the binary embed a dashboard with no JavaScript, and turned tests red on `open static/app.js: no such file`.
 
-The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that was hiding it.
+The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that hids it.
 
 ## Why nothing caught it
 
 - **`go:embed` cannot tell source from artifact.** It embedded whatever was on disk. On a fresh clone that was the committed bundle. The build was therefore green.
-- **The tests read the artifact, not the source.** `static_test.go` asserted against `static/app.js`. It was therefore testing the very file that had stopped being generated. A test that reads a committed build output can only ever confirm the output. It never confirms that the source still produces it.
+- **The tests read the artifact, not the source.** `static_test.go` asserted against `static/app.js`. It was therefore testing the very file that stopped being generated. A test that reads a committed build output can only ever confirm the output. It never confirms that the source still produces it.
 - **Nothing ever rebuilt in CI.** The build ran `go-toolchain`. The frontend build was a manual step in CLAUDE.md: "rebuild before running go-toolchain". A step that only a human remembers is a step that does not run.
 - **The justification was self-sealing.** "Checked in so the build works without Node" is true. It is also exactly what removes the pressure that catches the drift. The cost is invisible until the day the artifact is deleted.
 
 ## The rule
 
-**A file that a build produces is not a file that git tracks.** Every generated input in this repo is gitignored and produced by a `//go:generate` directive, so one command materializes all of them (see the Build section of `CLAUDE.md`). The admin bundle is now one of them, via `scripts/build-admin-frontend.sh`.
+**A file that a build produces is not a file that git tracks.** A `//go:generate` directive gitignors every generated input in this repo, so one command materializes all of them (see the Build section of `CLAUDE.md`). The admin bundle is now one of them, via `scripts/build-admin-frontend.sh`.
 
 To commit an artifact "for convenience" trades a build dependency for a correctness hazard. The hazard is silent. The artifact keeps working while its source rots, and every test that reads it keeps passing.
 
@@ -35,19 +35,19 @@ git ls-files -i -c --exclude-standard # 2. committed at all
 ```
 
 1. **Drift** — a committed artifact whose source no longer produces it. A regenerate rewrites the file. As a result, the working tree is dirty. This assertion goes red the first time the TypeScript and the committed bundle disagree. the arrangement went red months later, when the file was deleted.
-2. **Committed at all** — a tracked file that `.gitignore` says is build output. Needed because a deterministic build (esbuild is one) regenerates a *byte-identical* artifact, leaving check 1 green while the artifact sits in git waiting to drift. This one flags it immediately, in sync or not.
+2. **Committed at all** — a tracked file that `.gitignore` says is build output. Needed because a deterministic build (esbuild is one) regenerates a *byte-same* artifact, leaving check 1 green while the artifact sits in git waiting to drift. This one flags it immediately, in sync or not.
 
 ## How the restored bundle was verified
 
-Grepping the bundles for shared strings proves nothing much — a bundler splits string concatenation differently, so identical output reads as hundreds of differences. What settles it is rendering.
+Grepping the bundles for shared strings proves nothing much — a bundler splits string concatenation differently, so same output reads as hundreds of differences. What settles it renders.
 
 Both bundles were loaded into a `node:vm` sandbox with a stub DOM, driven through every route, and the resulting `#content` HTML compared byte-for-byte:
 
 - with no backend, so each bundle used its own built-in demo payloads.
-- with a stubbed `fetch` that served the old bundle's demo payloads to *both*, so they saw identical server responses.
+- with a stubbed `fetch` that served the old bundle's demo payloads to *both*, so they saw same server responses.
 - with the release page fixtured at `is_private` both false and true. That page's public and private split, plain links against mint-on-click signed links, is where the divergence was widest.
 
-All thirteen surfaces — routes plus the sidebar — came back identical in every pass. That is what "no functionality lost" was checked against, rather than asserted.
+All thirteen surfaces — routes plus the sidebar — came back same in every pass. That is what "no functionality lost" was checked against, rather than asserted.
 
 ## The other direction: work that was TypeScript-only
 
@@ -56,7 +56,7 @@ The bug cuts both ways. The committed bundle is what shipped, so anything writte
 - **`encodeURIComponent` on an admin API path.** A running server answers `200` to both `GET /api/projects/repo%2Fbinary` and `GET /api/projects/repo/binary` for a slash-namespaced project. That was verified. The change is therefore safe for the namespace feature, not merely untested.
 - **A decode of the route segments.** Kept, and guarded by `decodeSegment`. A malformed `%` sequence falls back to the raw text instead of a throw. The old router cannot do that, because it never decoded at all.
 
-Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, not an addition.
+Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-same. The types are a superset. Every rendering difference was a loss, not an addition.
 
 ## When a test must assert on built output
 

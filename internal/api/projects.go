@@ -1,3 +1,5 @@
+// Project names may contain multiple `/`-separated segments.
+
 package api
 
 // Project names may contain multiple `/`-separated segments. Each segment matches
@@ -56,6 +58,10 @@ func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "name must be 1-255 chars; each '/'-separated segment must match [a-z0-9][a-z0-9._-]*")
 		return
 	}
+	if auth.ReservedProjectName(req.Name) {
+		jsonError(w, http.StatusBadRequest, "the root of "+req.Name+" is a registry mirror prefix on oci.{domain}/v2/")
+		return
+	}
 
 	versioning := db.Versioning(req.Versioning)
 	if versioning == "" {
@@ -94,8 +100,9 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // updateProjectRequest carries operator-set project settings. Every field is a
 // pointer so an absent key leaves the setting unchanged (PATCH semantics).
 type updateProjectRequest struct {
-	CreateService *bool   `json:"create_service"`
-	AptDepends    *string `json:"apt_depends"`
+	CreateService *bool     `json:"create_service"`
+	AptDepends    *string   `json:"apt_depends"`
+	Depends       *[]string `json:"depends"`
 	// Versioning is decoded only to refuse it.
 	Versioning json.RawMessage `json:"versioning"`
 }
@@ -124,6 +131,9 @@ func (h *Handler) UpdateProjectSettings(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if !h.applyDepends(w, r, project, req.Depends) {
+		return
+	}
 	if req.AptDepends != nil && *req.AptDepends != project.AptDepends {
 		if err := h.DB.SetProjectAptDepends(r.Context(), project.ID, *req.AptDepends); err != nil {
 			jsonError(w, http.StatusInternalServerError, "failed to update project")

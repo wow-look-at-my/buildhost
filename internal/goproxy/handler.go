@@ -1,3 +1,5 @@
+// handler.go holds the handler code.
+
 package goproxy
 
 import (
@@ -21,6 +23,7 @@ func registerRoutes() {
 	auth.ServiceHandleRaw(Subdomain, "HEAD /{path...}", serve)
 	// A literal path outranks the catch-all, and no module request can collide
 	auth.ServiceHandleRaw(Subdomain, "GET /health", withService((*Service).serveHealth))
+	registerSumDBRoutes()
 }
 
 // withService adapts a Service method into a handler that resolves the running

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,6 +83,66 @@ func TestCreateRelease_AutoWithExplicitVersion(t *testing.T) {
 	assert.Equal(t, int64(5), rel.VersionNum)
 }
 
+// postRelease creates a release in proj through the handler.
+func postRelease(t *testing.T, h *Handler, proj *db.Project, body string) (int, db.Release) {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/projects/"+proj.Name+"/releases", strings.NewReader(body))
+	req.SetPathValue("project", proj.Name)
+	req = withProjectRoute(req, proj)
+	req = req.WithContext(writeToken(req.Context(), "read,write"))
+	rec := httptest.NewRecorder()
+	h.CreateRelease(rec, req)
+	var rel db.Release
+	if rec.Code == http.StatusCreated {
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &rel))
+	}
+	return rec.Code, rel
+}
+
+// A build numbers its release in the repo project, then publishes "<repo>/<binary>"
+// under that number. The number must be new there, and the publish must land first.
+func TestCreateRelease_RepoNumberIsNewInEveryChild(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	root := &db.Project{Name: "hooks", Versioning: db.VersioningAuto}
+	child := &db.Project{Name: "hooks/runner", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, root))
+	require.NoError(t, h.DB.CreateProject(ctx, child))
+	for num := int64(1); num <= 7; num++ {
+		require.NoError(t, h.DB.CreateRelease(ctx, &db.Release{ProjectID: child.ID, Version: fmt.Sprintf("%d", num), VersionNum: num}))
+	}
+
+	code, built := postRelease(t, h, root, `{"git_branch":"feature"}`)
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, "8", built.Version)
+
+	body, err := json.Marshal(map[string]string{"version": built.Version})
+	require.NoError(t, err)
+	code, published := postRelease(t, h, child, string(body))
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, int64(8), published.VersionNum)
+}
+
+func TestCreateRelease_AutoPicksPastATakenNumber(t *testing.T) {
+	t.Serial()
+	h := setupTestHandler(t)
+	ctx := context.Background()
+
+	proj := &db.Project{Name: "taken", Versioning: db.VersioningAuto}
+	require.NoError(t, h.DB.CreateProject(ctx, proj))
+	require.NoError(t, h.DB.CreateRelease(ctx, &db.Release{ProjectID: proj.ID, Version: "2", VersionNum: 1}))
+
+	code, rel := postRelease(t, h, proj, `{}`)
+	require.Equal(t, http.StatusCreated, code)
+	assert.Equal(t, "3", rel.Version)
+	assert.Equal(t, int64(3), rel.VersionNum)
+
+	code, _ = postRelease(t, h, proj, `{"version":"3"}`)
+	assert.Equal(t, http.StatusConflict, code, "a number the publisher named is a real conflict")
+}
+
 // A publish that carries the repo's default branch records it on the project,
 // so the apex "latest" tracks that branch -- the go-toolchain ("v1") fix.
 func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
@@ -117,10 +178,9 @@ func TestCreateRelease_SetsDefaultBranch(t *testing.T) {
 }
 
 // The publish path is the declarative surface for create_service: a present
-// field is asserted on EVERY publish (idempotently), an absent field leaves
+// field is asserted on EVERY publish (idempotently). An absent field leaves
 // the stored setting untouched -- so an older CI that never sends it can
-// never clobber an operator-set value, and a declaring CI is the source of
-// truth.
+// never clobber an operator-set value. A declaring CI is the source of truth.
 func TestCreateRelease_CreateServiceDeclaration(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -180,7 +240,6 @@ func TestCreateRelease_InvalidDefaultBranch(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-// Note: TestCreateRelease_NoAuth removed -- auth is now enforced by the
 // requireProject middleware (tested in the auth package).
 
 func TestCreateRelease_InvalidBody(t *testing.T) {
@@ -295,10 +354,10 @@ func TestGetRelease_Success(t *testing.T) {
 }
 
 // GetRelease must carry the release's artifacts. buildhost-publish-release
-// falls back to re-reading the release when the publish response predates the
-// artifacts field -- a rolling deploy can serve that publish from an older
-// container -- so without this the fallback has nothing to recover and a
-// publish fails for the duration of someone else's deploy.
+// falls back to re-reading the release. This happens when the publish
+// response predates the artifacts field. A rolling deploy can serve that
+// publish from an older container. So without this the fallback has nothing
+// to recover, and a publish fails for the duration of someone else's deploy.
 func TestGetRelease_ReturnsArtifacts(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)
@@ -519,11 +578,11 @@ func TestSemverToNum(t *testing.T) {
 	}
 }
 
-// A draft release is uploaded deliberately but kept out of the project's
-// release stream: `latest` (and per-branch resolution, and every package
-// manager built on it) must not see it, while an exact-version lookup must.
-// That is the whole point -- publishing a build for yourself without moving the
-// pointer everyone else follows.
+// A draft release is uploaded deliberately. However, the draft release kept out
+// of the project's release stream: `latest` (and per-branch resolution, and
+// every package manager built on it) must not see it, while an exact-version
+// lookup must. That is the whole point -- publishing a build for yourself
+// without moving the pointer everyone else follows.
 func TestCreateRelease_Draft(t *testing.T) {
 	t.Serial()
 	h := setupTestHandler(t)

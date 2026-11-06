@@ -1,3 +1,5 @@
+// deleted_branches.go holds the deleted branches code.
+
 package db
 
 import (

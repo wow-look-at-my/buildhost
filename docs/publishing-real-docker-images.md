@@ -30,7 +30,7 @@ permissions:
   deployments: write   # optional, additive: register the publish as a GitHub Deployment
 steps:
   - uses: actions/checkout@v4
-  - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@master
+  - uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish-docker@lkgb
     with:
       server: https://builds.example.com   # optional, defaults to https://pazer.build
       context: .                            # optional
@@ -40,10 +40,12 @@ With `tags` omitted, a push is tagged with the commit SHA and the sanitized bran
 
 Pass `tags`, newline-separated, to override that. A bare tag expands to `<registry>/<project>:<tag>`. A reference that contains `/` or `:` is used as-is. You can therefore also push to another registry you are logged in to.
 
+The action fetches the org secrets the repository is entitled to from secret-server and gives each to BuildKit under its own name. A `RUN --mount=type=secret,id=<name>` step reads one. No layer holds it.
+
 To fetch an artifact back in a workflow, use `buildhost-download`. It resolves the same way the URL does, and it defaults to the runner's own platform.
 
 ```yaml
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@lkgb
   id: cli
   with:
     project: buildhost      # optional: version, branch, os, arch, format, token
@@ -51,11 +53,11 @@ To fetch an artifact back in a workflow, use `buildhost-download`. It resolves t
 
 It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of a failure. A caller can therefore fall back.
 
-For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To obtain a CLI that can do that is the action's problem, and not yours.
+For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To get a CLI that can do that is the action's problem, and not yours.
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-push@lkgb
   with:
     image: layout
     refs: oci.pazer.build/myproject:v1.2.3
@@ -64,7 +66,7 @@ For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI lay
 A publish logs docker in for you, and so does a pull. To fetch a published image, into a nested daemon or onto the runner itself, use `buildhost-docker-pull`. It authenticates itself, so no workflow handles a registry credential.
 
 ```yaml
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-docker-pull@lkgb
   with:
     images: oci.pazer.build/myproject:v1.2.3
 ```

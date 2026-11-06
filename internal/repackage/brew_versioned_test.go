@@ -60,10 +60,10 @@ func TestRenderBrewFormula_KegOnlyWhenClassIsRenamed(t *testing.T) {
 	assert.Contains(t, renderFormula(t, f), `!= "`+BrewClassName(f.Name)+`"`)
 }
 
-// Homebrew auto-links a keg_only :versioned_formula keg when no sibling is
-// installed, and in a third-party tap it never finds the siblings to unlink
-// by short ones). The unversioned formula's link then conflicts. A string
-// reason is never auto-linked.
+// Homebrew auto-links a keg_only :versioned_formula keg. This happens when
+// no sibling is installed, and in a third-party tap it never finds the
+// siblings to unlink by short ones). The unversioned formula's link then
+// conflicts. A string reason is never auto-linked.
 func TestRenderBrewFormula_VersionedIsNeverAutoLinked(t *testing.T) {
 	f := baseFormula(BrewResource{OS: "linux", Arch: "intel", URL: "https://dl.example.com/mytool", SHA256: "abc"})
 	assert.NotContains(t, renderFormula(t, f), ":versioned_formula")

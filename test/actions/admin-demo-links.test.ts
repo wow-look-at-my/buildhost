@@ -1,10 +1,12 @@
 // Every in-app link on the PREVIEW dashboard must reach a page that renders.
+// The LIVE layout, with a failing API, must show the error page and never a fixture.
 
 
 const ROOT = "internal/admin/static";
 const PREFIX = "/buildhost/@preview/";
 const PORT = 18321;
 const BASE = `http://127.0.0.1:${PORT}${PREFIX}`;
+const LIVE = `http://127.0.0.1:${PORT}/`;
 
 const http = require("node:http");
 const fs = require("node:fs");
@@ -21,8 +23,28 @@ const types: Record<string, string> = {
 };
 
 const root = path.resolve(ROOT);
+
+const serveLive = (url: string, res: any) => {
+	if (url.startsWith("/api/")) {
+		res.writeHead(502);
+		res.end("bad gateway");
+		return;
+	}
+	const rel = url === "/" ? "/index.html" : url;
+	const file = path.join(root, rel);
+	const known = file.startsWith(root) && rel !== "/demo.json" && fs.existsSync(file);
+	const served = known ? file : path.join(root, "index.html");
+	res.writeHead(200, { "content-type": types[path.extname(served)] || "application/octet-stream" });
+	res.end(fs.readFileSync(served));
+};
+
 const server = http.createServer((req: any, res: any) => {
-	let rel = String(req.url).split("?")[0].slice(PREFIX.length - 1) || "/";
+	const url = String(req.url).split("?")[0];
+	if (!url.startsWith(PREFIX)) {
+		serveLive(url, res);
+		return;
+	}
+	let rel = url.slice(PREFIX.length - 1) || "/";
 	if (rel === "/") rel = "/index.html";
 	const file = path.join(root, rel);
 	if (!file.startsWith(root) || !fs.existsSync(file)) {
@@ -34,9 +56,9 @@ const server = http.createServer((req: any, res: any) => {
 	res.end(fs.readFileSync(file));
 });
 
-// The same sequence sites-cors.test.ts uses, in the same order: an explicit
-// binary outside a runner, then the runner's own Chrome, then a staged
-// download. A browser is REQUIRED -- no browser fails this check rather than
+// This is the same sequence sites-cors.test.ts uses, in the same order. It
+// tries an explicit binary outside a runner, then the runner's own Chrome,
+// then a staged download. A browser is REQUIRED -- no browser fails this check rather than
 // reducing it to something that cannot go red.
 const launch = async () => {
 	const attempts: Array<[string, Record<string, unknown>]> = [
@@ -108,6 +130,40 @@ const main = async () => {
 			(as: any[]) => as.map((a) => a.getAttribute("href")));
 		for (const l of links) if (!seen.has(l)) queue.push(l);
 	}
+
+	// A fixture string on the live dashboard reads as real server state.
+	const live = await browser.newPage();
+	const fixtures = ["v0.0.0-demo", "myapp", "cli-tool", "builds.example.com"];
+	const expectLiveError = async (where: string) => {
+		await live.waitForSelector("#content h1", { timeout: 10000 }).catch(() => {
+			throw new Error(`live ${where} rendered no heading`);
+		});
+		const heading = (await live.textContent("#content h1"))!.trim();
+		const body = (await live.textContent("body")) || "";
+		const leaked = fixtures.filter((f) => body.includes(f));
+		if (leaked.length > 0) {
+			throw new Error(`live ${where} with a failing API drew demo data (${leaked.join(", ")}) under "${heading}"`);
+		}
+		if (heading !== "Error") {
+			throw new Error(`live ${where} with a failing API drew "${heading}" instead of the error page`);
+		}
+		core.info(`live ${where} -> ${heading}`);
+	};
+	await live.goto(LIVE + "#/");
+	await expectLiveError("#/");
+	// demo mode once stuck for the rest of the tab after one failed request.
+	// These callbacks run in the PAGE; this file type-checks without DOM types.
+	await live.evaluate(() => {
+		const w = globalThis as any;
+		w.document.getElementById("content").innerHTML = "";
+		w.location.hash = "#/projects";
+	});
+	await live.waitForFunction(() => (globalThis as any).document.querySelector("#content h1") !== null);
+	await expectLiveError("#/projects");
+	// The admin server serves the SPA at every path, not only at "/".
+	await live.goto(LIVE + "index.html#/");
+	await expectLiveError("/index.html#/");
+	core.info("OK: the live dashboard never drew demo data");
 
 	await browser.close();
 	server.close();

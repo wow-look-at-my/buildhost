@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -187,6 +188,47 @@ func TestNextVersionNum(t *testing.T) {
 
 	assert.Equal(t, int64(2), num)
 
+}
+
+// A build numbers its release in the repo project and publishes each binary to
+// "<repo>/<binary>" under that number. A number one family member already holds
+// would land the publish on a release that exists.
+func TestNextVersionNumSpansTheFamily(t *testing.T) {
+	t.Serial()
+	d := openTestDB(t)
+	ctx := context.Background()
+	project := func(name string, versioning Versioning) *Project {
+		p := &Project{Name: name, Versioning: versioning}
+		require.NoError(t, d.CreateProject(ctx, p))
+		return p
+	}
+	release := func(p *Project, num int64) {
+		require.NoError(t, d.CreateRelease(ctx, &Release{ProjectID: p.ID, Version: fmt.Sprintf("%d", num), VersionNum: num}))
+	}
+	root := project("hooks", VersioningAuto)
+	runner := project("hooks/runner", VersioningAuto)
+	guard := project("hooks/guard", VersioningAuto)
+	semver := project("hooks/lib", VersioningSemver)
+	other := project("hooksmith", VersioningAuto)
+	release(root, 7)
+	release(runner, 349)
+	release(guard, 661)
+	release(semver, 9_000_000)
+	release(other, 5000)
+
+	for _, p := range []*Project{root, runner, guard} {
+		num, err := d.NextVersionNum(ctx, p.ID)
+		require.NoError(t, err)
+		assert.Equal(t, int64(662), num, "next number of %s", p.Name)
+	}
+
+	num, err := d.NextVersionNum(ctx, semver.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(9_000_001), num, "a semver project keeps its own number line")
+
+	num, err = d.NextVersionNum(ctx, other.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5001), num, "a name that only starts with the family name is another family")
 }
 
 func TestPublishRelease(t *testing.T) {

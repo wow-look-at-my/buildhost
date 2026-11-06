@@ -1,4 +1,5 @@
-// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its redirects, in a real browser.
+// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its
+// redirects, in a real browser.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -21,7 +22,8 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that broke: a PRIVATE project serving one public site branch (X-Public-Site).
+// The shape that broke: a PRIVATE project serving a single public site branch
+// (X-Public-Site), which is how every PR preview.
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
@@ -41,7 +43,10 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
-// An APE starts through its own shell trampoline: a direct execve of it fails ENOEXEC.
+// An APE starts through its own shell trampoline: a direct execve of it fails
+// ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
+// the header and does the rest, which is what a bash "run:" step does
+// implicitly and node's spawn does not.
 const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
 const runner = (args: string[]): [string, string[]] =>
 	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
@@ -51,6 +56,8 @@ const serverEnv = {
 	BUILDHOST_DB_PATH: path.join(dataDir, "buildhost.db"),
 	BUILDHOST_LISTEN_ADDR: `127.0.0.1:${PORT}`,
 	BUILDHOST_ADMIN_LISTEN_ADDR: `127.0.0.1:19090`,
+	// Required. This server is addressed by several Hosts, so none is canonical.
+	BUILDHOST_PRIMARY_DOMAIN: "*",
 };
 
 function bootstrapToken(): string {
@@ -135,9 +142,9 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 async function main(): Promise<void> {
 const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
 let serverLog = "";
-server.stdout.on("data", (d) => (serverLog += d));
-server.stderr.on("data", (d) => (serverLog += d));
-server.on("exit", (code) => {
+server.stdout.on("data", (d: Buffer) => (serverLog += d));
+server.stderr.on("data", (d: Buffer) => (serverLog += d));
+server.on("exit", (code: number | null) => {
 	if (code !== 0 && code !== null) core.error(`buildhost serve exited ${code}:\n${serverLog}`);
 });
 
@@ -159,9 +166,9 @@ try {
 	const auth = { Authorization: `Bearer ${token}` };
 
 	// The create-project field is `is_private` (bool). An unknown field is
-	// IGNORED, so a wrong name silently yields a PUBLIC project -- which is how
-	// the private-project case below spent its earliest life asserting nothing.
-	// Every creation here therefore reads the visibility back and fails on a mismatch.
+	// IGNORED. A wrong name silently yields a PUBLIC project -- which is how the
+	// private-project case below spent its first life asserting nothing. Every
+	// creation here therefore reads the visibility back and fails on a mismatch.
 	async function createProject(name: string, isPrivate: boolean) {
 		const res = await fetch(`http://localhost:${PORT}/api/v1/projects`, {
 			method: "POST",
@@ -180,7 +187,7 @@ try {
 
 	await createProject(PROJECT, false);
 
-	// Branches so `library` is NOT the default -- the production shape,
+	// Branches so `library` is NOT the default. That is the production shape,
 	// where the URL redirects to the @branch form rather than collapsing
 	// straight to the bare project path.
 	for (const [branch, files] of [
@@ -238,10 +245,10 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
-	// The production shape: private project, public site branch, ANONYMOUS.
+	// The production shape.
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
-
+	// This is the actual user-visible claim.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };

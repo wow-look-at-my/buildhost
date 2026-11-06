@@ -1,3 +1,5 @@
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+
 export interface BuildInfo {
     version: string;
     commit: string;
@@ -12,6 +14,7 @@ export interface SidebarData {
     cpu_percent: string;
     disk_used: string;
     disk_total: string;
+    problems: string[];
 }
 
 export interface DashboardStats {
@@ -52,6 +55,23 @@ export interface DashboardData {
     cpu_total: string;
 }
 
+// "auto" defers to the next level up: build -> project -> folder -> GitHub repo.
+export type VisibilityMode = "auto" | "public" | "private";
+
+export interface ProjectVisibility {
+    mode: VisibilityMode;
+    auto_private: boolean;
+    folder_prefix: string;
+    folder_mode: VisibilityMode;
+    private: boolean;
+}
+
+export interface VisibilityFolder {
+    prefix: string;
+    mode: VisibilityMode;
+    updated_at: string;
+}
+
 export interface ProjectSummary {
     id: number;
     name: string;
@@ -61,6 +81,7 @@ export interface ProjectSummary {
     release_count: number;
     artifact_count: number;
     created_at: string;
+    visibility?: ProjectVisibility;
 }
 
 export interface Project {
@@ -71,6 +92,7 @@ export interface Project {
     license: string;
     versioning: string;
     is_private: boolean;
+    github_repo?: string;
     created_at: string;
     updated_at: string;
 }
@@ -90,6 +112,7 @@ export interface SiteInfo {
     file_count: number;
     size: number;
     git_commit: string;
+    is_public?: boolean;
     updated_at: string;
 }
 
@@ -99,6 +122,9 @@ export interface ProjectData {
     releases: ReleaseSummary[];
     sites: SiteInfo[];
     base_url: string;
+    visibility?: ProjectVisibility;
+    release_modes?: Record<string, VisibilityMode>;
+    site_modes?: Record<string, VisibilityMode>;
 }
 
 export interface Release {
@@ -139,6 +165,7 @@ export interface ReleaseData {
     services: ServiceURLs;
     project: Project;
     release: Release;
+    release_mode?: VisibilityMode;
     artifacts: ArtifactDetail[];
     total_downloads: number;
     total_size: number;
@@ -270,6 +297,22 @@ export interface RetentionPreview {
     releases: RetentionRelease[];
 }
 
+// One non-default branch the deleted-branch pass asked GitHub about
+// (GET/POST /api/retention/deleted-branches). Only "deleted" builds go.
+export interface RetentionBranch {
+    project_name: string;
+    github_repo: string;
+    branch: string;
+    state: "deleted" | "present" | "default" | "unknown";
+    error: string;
+    releases: number;
+}
+
+export interface DeletedBranchesReport extends RetentionPreview {
+    enforced: boolean;
+    branches: RetentionBranch[];
+}
+
 export interface RetentionData {
     keep_n: number;
     recency_hours: number;
@@ -309,6 +352,8 @@ export interface TreeRow {
     kind: "folder" | "project";
     depth: number;
     name?: string;
+    // path is a folder's full prefix, e.g. "owner/repo".
+    path?: string;
     project?: ProjectSummary;
 }
 
@@ -329,7 +374,12 @@ export interface Pages {
     storage(): void;
     retention(): void;
     goproxy(): void;
+    runFiles(): void;
+    cache(): void;
+    mirror(): void;
     duplicates(): void;
+    github(): void;
+    settings(): void;
 }
 
 // --- Projects split by a GitHub rename (admin GET /api/duplicates) ---
@@ -349,6 +399,39 @@ export interface DuplicateGroup {
 
 export interface DuplicatesData {
     groups: DuplicateGroup[];
+}
+
+/** One BUILDHOST_* variable (admin GET /api/settings). A secret's value is always empty. */
+export interface SettingRow {
+    name: string;
+    group: string;
+    kind: "string" | "secret" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
+    default: string;
+    description: string;
+    env_only: boolean;
+    live: boolean;
+    value: string;
+    set: boolean;
+    source: "dashboard" | "environment" | "default";
+    restart_pending: boolean;
+}
+
+export interface SettingsData {
+    settings: SettingRow[];
+    can_restart: boolean;
+}
+
+export interface GitHubCredentialData {
+    source: "app" | "token" | "none";
+    env_credential: boolean;
+    secret_server: {
+        configured: boolean;
+        at?: string;
+        ok: boolean;
+        error?: string;
+        applied?: string;
+    };
+    github_api: string;
 }
 
 export interface MergePlan {
@@ -373,7 +456,7 @@ export interface DownloadLink {
     url: string;
 }
 
-// serviceURLs(r) in internal/admin/admin.go: one absolute base URL per
+// serviceURLs(r) in internal/admin/admin.go: a single absolute base URL per
 // service subdomain, derived per request.
 export interface ServiceURLs {
     dl: string;
@@ -445,4 +528,145 @@ export interface GoproxyState {
 export interface GoproxyData {
     enabled: boolean;
     state?: GoproxyState;
+}
+
+// --- Run files (admin GET /api/run-files) ---
+
+export interface RunFile {
+    name: string;
+    size: number;
+    sha256: string;
+    created_at: string;
+    reads: number;
+    read_at: string | null;
+}
+
+export interface RunFilesRun {
+    repo: string;
+    run_id: string;
+    created_at: string;
+    used_at: string;
+    checked_at: string | null;
+    /** "unknown": GitHub could not report the run's status; check_error says why. */
+    state: "live" | "ended" | "unknown";
+    check_error?: string;
+    ended_at: string | null;
+    expires_at: string | null;
+    bytes: number;
+    reads: number;
+    files: RunFile[];
+}
+
+/** One pass of the run files janitor (runfiles.Report). */
+export interface RunFilesJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    checked: number;
+    check_failures: number;
+    last_check_error?: string;
+    ended: number;
+    deleted: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+export interface RunFilesData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    runs: RunFilesRun[];
+    janitor: RunFilesJanitor | null;
+}
+
+// --- CI cache (admin GET /api/cache) ---
+
+export interface CacheEntryRow {
+    repo: string;
+    ref: string;
+    key: string;
+    size: number;
+    sha256: string;
+    created_at: string;
+    used_at: string;
+    reads: number;
+    expires_at: string;
+}
+
+/** One pass of the cache janitor (cicache.Report). */
+export interface CacheJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    entries: number;
+    expired: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+/** One blob or manifest the registry mirror holds. media_type is empty for a layer or a config. */
+export interface MirrorBlobRow {
+    upstream: string;
+    digest: string;
+    media_type: string;
+    size: number;
+    created_at: string;
+    used_at: string;
+    reads: number;
+    expires_at: string;
+}
+
+/** The digest a tag named the last time its upstream answered. */
+export interface MirrorTagRow {
+    upstream: string;
+    repository: string;
+    tag: string;
+    digest: string;
+    media_type: string;
+    checked_at: string;
+}
+
+/** One pass of the mirror janitor (mirror.Report). */
+export interface MirrorJanitor {
+    at: string;
+    duration_ms: number;
+    deferred: boolean;
+    blobs: number;
+    expired: number;
+    pressure_deleted: number;
+    freed_bytes: number;
+    error?: string;
+}
+
+export interface MirrorData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    tag_ttl_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    upstreams: { service: string; remote: string }[];
+    blobs: MirrorBlobRow[];
+    tags: MirrorTagRow[];
+    janitor: MirrorJanitor | null;
+}
+
+export interface CacheData {
+    keep_seconds: number;
+    check_interval_seconds: number;
+    min_free_percent: number;
+    total_bytes: number;
+    disk_free?: number;
+    disk_total?: number;
+    disk_used?: number;
+    entries: CacheEntryRow[];
+    janitor: CacheJanitor | null;
 }

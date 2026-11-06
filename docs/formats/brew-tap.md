@@ -8,7 +8,7 @@
 
 A formula is also fetchable at `brew.{domain}/Formula/{project}.rb`, and at the legacy `brew.{domain}/{project}`. A tap formula FILENAME folds the slash namespace, so `tapFormulaName` turns `gcc/pgo` into `gcc-pgo.rb`. The formula routes therefore resolve a folded name back to its project when no project matches it literally. `Handler.parseRoute` does that.
 
-A literally named project always wins. A fold candidate is restricted to a project the request may read, by `auth.TokenCanReadProject`, which is the tap-membership rule. An anonymous probe of a private project's folded name therefore stays a 404, and never a 401 existence leak. `requireProject` still applies its normal auth to the resolved project.
+A literally named project always wins. Auth restricts a fold candidate.TokenCanReadProject`, which is the tap-membership rule. An anonymous probe of a private project's folded name therefore stays a 404, and never a 401 existence leak. `requireProject` still applies its normal auth to the resolved project.
 
 The `{project}.rb` pattern is ONE path segment. A slash-namespaced name therefore also gets `brew.{domain}/Formula/{path...}`. Without that route, `/Formula/gcc/pgo.rb` fell through to the legacy `/{project}` route. That route read the whole path as a project name, and answered "project not found".
 
@@ -22,13 +22,15 @@ The tap writes `formula_renames.json` at its root, mapping each folded name to i
 
 ## Authenticated tap
 
-`brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a credentialed `brew tap x:TOKEN@...` silently ingest the public-only tap.
+`brew.{domain}/private/tap.git` challenges an anonymous request with a 401 and a Basic realm. git does NOT send a URL-embedded credential preemptively, and waits for a challenge. A 200 therefore makes a client with a URL credential silently ingest the public-only tap. The documented flow sends the token as an `http.<url>.extraHeader` instead. A URL credential makes git report a redirect on every fetch, and Homebrew rewrites the tap remote to the redirect target without the credential.
 
 The route then serves a tap scoped to the credential. That tap holds every public project, plus the private projects the token can read. `auth.TokenCanReadProject` decides that, which is the same rule requireProject applies to a single-project read. Tap membership can therefore never leak a name the token cannot read directly.
 
 A credentialed request to plain `/tap.git` is likewise served in place, rather than redirected. A redirect drops the credential mid-flight.
 
-A private formula carries `repackage.BrewPrivateStrategy` inline, guarded by `unless defined?`. `brew extract` copies a formula into a tap that has no `lib/`, so the formula cannot require a file from this tap. It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs. The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
+A private formula carries `repackage.BrewPrivateStrategy` inline, guarded by `unless defined?`. `brew extract` copies a formula into a tap that has no `lib/`. The formula cannot require a file from this tap. It downloads `using: BuildhostCurlDownloadStrategy`. That strategy sends `Authorization: Bearer $HOMEBREW_BUILDHOST_TOKEN`. The `HOMEBREW_` prefix is mandatory, because Homebrew scrubs every other env var before formula code runs.
+
+The tap itself never embeds a token. The authenticated dl redirect completes the chain with its signed-token Location.
 
 A credentialed tap or formula response carries `Cache-Control: private, no-store` and `Vary: Authorization`. The CDN can therefore never serve one scope's tap to another.
 
@@ -38,15 +40,19 @@ The tap TREE holds ONE formula per project, the latest release. It never holds a
 
 The tap HISTORY holds every published default-branch release. `brew version-install <tap>/<formula>@<version>` finds no such formula. As a result, it runs `brew extract`, which walks the git log of `Formula/<formula>.rb` back from HEAD to the commit whose `version` matches. It writes that file into the user's `<user>/versions` tap with the class renamed to `<Formula>AT<version>`, then installs it. `brew extract` source: `Library/Homebrew/dev-cmd/extract.rb`.
 
-`refreshTapLineage` therefore appends, before the commit of the current tree, one commit per past release the lineage has not recorded. Each commit sets that project's formula to that release. `buildhost-history-keys` in the lineage directory records each formula state (path plus a sha256 of its bytes) the history already holds. A re-rendered release, from a new digest or a template change, is a new state and is appended again. As a result, `brew extract` finds the current bytes first. The commits only append, so a clone still fast-forwards. `TestSmartClone_HistoryHoldsEveryVersion` guards it.
+`refreshTapLineage` therefore appends, before the commit of the current tree, one commit per past release the lineage has not recorded. Each commit sets that project's formula to that release. `buildhost-history-keys` in the lineage directory records each formula state (path plus a sha256 of its bytes) the history already holds. A re-rendered release, from a new digest or a template change, is a new state and is appended again. As a result, `brew extract` finds the current bytes first. The commits only append, so a clone still fast-forwards.
 
-A history formula needs the tar.gz digest of every artifact of every release. A tap request never computes one for a past release: `formulaHistory` mode leaves a release with an uncached digest out and queues it. This is on the handler's one background filler (`queueDigestFill`). When the queue drains the filler drops every live lineage, so the next fetch appends the release. `buildhost serve` queues every missing digest at start (`brew.BackfillHistoryDigests`), which covers the first deploy and every `TransformVersion` bump. Hashing past releases on the request path pinned the CPU on a first clone. `TestTap_BuildDigestsLatestReleaseOnly` and `TestTapHistory_PendingDigestFillsInBackground` guard it.
+`TestSmartClone_HistoryHoldsEveryVersion` guards it.
+
+A history formula needs the tar.gz digest of every artifact of every release. A tap request never computes one for a past release: `formulaHistory` mode leaves a release with an uncached digest out and queues it. This is on the handler's one background filler (`queueDigestFill`). When the queue drains the filler drops every live lineage, so the next fetch appends the release. `buildhost serve` queues every missing digest at start (`brew.BackfillHistoryDigests`), which covers the first deploy and every `TransformVersion` bump. Hashing past releases on the request path pinned the CPU on a first clone.
+
+`TestTap_BuildDigestsLatestReleaseOnly` and `TestTapHistory_PendingDigestFillsInBackground` guard it.
 
 `brew.{domain}/Formula/<formula>@<version>.rb` serves one release's formula directly. The version is `release.Version` without a leading `v`, or `version_num` when the version is empty. Its digests are computed on that request.
 
 Every formula declares `keg_only` when its class name is not the base class name, which `Module#name` gives at load time. The tap's own formula keeps the base name, so it links. A formula `brew extract` renamed is keg-only, so it installs beside the latest one. This ships the same binary name, without a link conflict in either order. The reason is a string, not `keg_only :versioned_formula`.
 
-Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. In a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names` is keyed by full `user/repo/name` names, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
+Homebrew 7 auto-links a `:versioned_formula` keg when no sibling version is installed (`FormulaInstaller#auto_link_versioned_keg_only?`). It relies on finding the siblings to unlink them when another version links. Full `user/repo/name` names key in a third-party tap it never finds them: `Tap#prefix_to_versioned_formulae_names`, and `Formula#versioned_formulae_names` looks up the short name. Installing a pin and then the unversioned formula therefore failed with "Can not symlink bin/<name>". A string reason is never auto-linked.
 
 The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Formulary.class_s`. Homebrew turns `@<digit>` into `AT`, so `ns-app@1.2.3` is `NsAppAT123`. A version that does not start with a digit keeps its `@` and cannot be a Ruby constant. As a result, it gets no versioned formula. Neither does one whose class name comes out with any other non-constant character, such as `1.0.0--x`.
 
@@ -54,7 +60,7 @@ The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Form
 
 The class name comes from `repackage.BrewClassName`. It mirrors Homebrew's own filename-to-class derivation in `Formulary.class_s`. There `-`, `_` and `.` separate, and buildhost's folded `/` separates too. The next character is upcased, so `go1.2.3` becomes `Go123`.
 
-A digit-leading project name is excluded from brew entirely, by `repackage.BrewEligibleProjectName`. A formula endpoint answers 404 for it, and the tap skips it. `class 7zip < Formula` is a Ruby syntax error. No substitute class satisfies brew's loader either, because `Formulary.class_s("7zip")` returns `"7zip"`, which is not a legal constant. Both facts were measured against Homebrew 6.0.9.
+Repa excluds a digit-leading project nameckage.BrewEligibleProjectName`. A formula endpoint answers 404 for it, and the tap skips it. `class 7zip < Formula` is a Ruby syntax error. No substitute class satisfies brew's loader either, because `Formulary.class_s("7zip")` returns `"7zip"`, which is not a legal constant. Both facts were measured against Homebrew 6.0.9.
 
 **Every formula carries a TOP-LEVEL `url` and `sha256`.** That is the canonical resource, which is linux/intel when present, and otherwise the first in stable (OS, Arch) order. `repackage.brewCanonicalResource` picks it. The per-platform `on_<os>` and `on_<arch>` stanzas come in addition.
 
@@ -62,23 +68,31 @@ Homebrew must find a stable URL on EVERY platform to import a formula at all. It
 
 An `on_*` block still overrides `url` and `sha256` on a platform it matches. A formula whose resources span only ONE os additionally declares `depends_on :linux` or `depends_on :macos`. That is homebrew-core's single-platform pattern. A foreign-platform install therefore fails cleanly, instead of a fetch of a binary that cannot run.
 
+## Dependencies
+
+A project's `depends` list renders one `depends_on "<repackage.BrewTap>/<formula>"` line per dependency, after the platform `depends_on`. `repackage.BrewTap` is `pazer/build`, the tap name every install command uses. The tap names each dependency by its tap formula name from `tapFormulaNames` (`formulaDepends`). That name depends a dependency that takes its root's name. A formula with such a dependency renders a second time once the names are known (`dependsRenamed`). The single-formula route and `fmt=brew` know no tap, so they use the folded name, which `formula_renames.json` still maps.
+
 ## Opt-in `service do` block
 
-`projects.create_service` arrives in migration 013. It is the packaging-agnostic background-service setting. The publishing repo's CI DECLARES it, as an optional `create_service` bool on release-create. The `buildhost-create-release` and `buildhost-publish` actions carry that input. It is asserted idempotently on EVERY publish. An absent value leaves the stored setting untouched, so an old CI never clobbers it. That follows the default_branch reassertion precedent. An operator can also flip it directly, through `PATCH /api/v1/projects/{project}`.
+`projects.create_service` arrives in migration 013. It is the packaging-agnostic background-service setting. The publishing repo's CI DECLARES it, as an optional `create_service` bool on release-create. The `buildhost-create-release` and `buildhost-publish` actions carry that input. It is asserted idempotently on EVERY publish. An absent value leaves the stored setting untouched, so an old CI never clobbers it.
+
+That follows the default_branch reassertion precedent. An operator can also flip it directly, through `PATCH /api/v1/projects/{project}`.
 
 Only a BOOL crosses the wire either way. No publisher-controlled Ruby can therefore enter the template.
 
-A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY restart. A plain `keep_alive true` respawns a deliberately-exiting app about every few seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
+A flagged binary-kind project's formula gains a `service do` block. It carries `run [opt_bin/"<InstallName>"]`, and the opt path survives an upgrade. It carries `keep_alive successful_exit: false`, which is launchd's `KeepAlive {SuccessfulExit: false}`, and means CRASH-ONLY start. A plain `keep_alive true` respawns a deliberately-exiting app about every few seconds, such as a single-instance exit-0 handoff. It carries `log_path` and `error_log_path` under `var/"log/"`, and brew services mkpaths the log parents itself before load, through `Service#path_dirs`. It carries `process_type :interactive`.
 
 ONE `brew services start <tap>/<project>` then manages the binary as a login service. On macOS that is a user LaunchAgent in the gui domain. An upgrade keeps it running, through opt_bin.
 
-Install-time auto-start is STRUCTURALLY impossible in a formula. `post_install` is the only install hook. It runs inside brew's seatbelt sandbox. That profile is a global `(deny file-write*)` plus a build-path allowlist, from `formula_installer.rb` post_install and `extend/os/mac/sandbox.rb` SEATBELT_ERB. `~/Library/LaunchAgents` is therefore unwritable. A nested `brew services start` cannot work there. A failing `post_install` also sets `Homebrew.failed`, which is a red install. Never ship one.
+Install-time auto-start is STRUCTURALLY impossible in a formula. `post_install` is the only install hook. It runs inside brew's seatbelt sandbox. That profile is a global `(deny file-write*)` plus a build-path allowlist, from `formula_installer.rb` post_install and `extend/os/mac/sandbox.rb` SEATBELT_ERB. `~/Library/LaunchAgents` is therefore unwritable. A nested `brew services start` cannot work there.
+
+A failing `post_install` also sets `Homebrew.failed`, which is a red install. Never ship one.
 
 `brew uninstall` does NOT stop a service, because only `caveats.rb` consumes `Utils::Service`. Document `brew services stop` before removal.
 
 On Linux, brew's systemd user units carry no graphical-session ordering and no environment. That is documented as a poor fit for a GUI app. The deb materialization is the Linux path. See `internal/repackage`.
 
-A non-binary kind never emits the block, because the block references `opt_bin`, which only `bin.install` stages. The flag-off rendering is pinned BYTE-IDENTICAL to the pre-flag output. Formula bytes feed the tap's content-addressed git objects, so off-state drift mints a spurious tap commit for every project.
+A non-binary kind never emits the block, because the block references `opt_bin`, which only `bin.install` stages. The flag-off rendering is pinned BYTE-Same to the pre-flag output. Formula bytes feed the tap's content-addressed git objects, so off-state drift mints a spurious tap commit for every project.
 
 A slash-named project calls `bin.install` on the BASENAME. The tar.gz's only top-level entry is the namespace dir, and brew strips a lone top-level dir when it unpacks. The staged file is therefore just the basename. An install of the slashed path answers ENOENT.
 
@@ -104,17 +118,27 @@ The tap itself is served from a **persistent, append-only, per-lineage git histo
 
 There is one lineage per **(request-derived base URL, credential scope)** key. The base URL is part of the key because a tap must never be served with another host's URLs baked in. The credential scope is part of it because tap contents depend on what the credential may read. `tapScopeKey` computes that scope, as anon, a DB-token ID, or an OIDC subject plus namespace. One scope's lineage can therefore never be handed to another.
 
-Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. It is served by mmap through an `os.Root`. That is the storage-layer pattern, with no heap buffering and no path escape.
+Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. Mmap through an `os.R servs itoot`. That is the storage-layer pattern, with no heap buffering and no path escape.
 
 **A ref only ever fast-forwards.** A rebuild reads the persisted tip. It REUSES that tip when the new content's tree is unchanged. As a result, a periodic rebuild adds no growth. The commit sha is deterministic, from zero timestamps, a fixed identity, and content. A rebuild otherwise appends a commit with `parent <tip>`.
 
-Objects are written BEFORE the ref advances, content-addressed, by temp file and rename. A reader therefore never sees a ref that names a missing object. A crash leaves a consistent store.
+Temp file and rename writes objects. A reader therefore never sees a ref that names a missing object. A crash leaves a consistent store.
 
-This is what keeps Homebrew's updater working. `brew update` runs `git fetch --force` and `git rebase origin/main` per tap. The old throwaway-snapshot design minted an unrelated PARENTLESS root per build. That wedged every client mid-rebase, in add/add conflicts, after every publish. An already-wedged clone recovers once, with `brew update-reset`. Append-only objects also fix the dumb-HTTP consistency race. A publish mid-`brew update` can no longer orphan a ref a client already fetched.
+This is what keeps Homebrew's updater working. `brew update` runs `git fetch --force` and `git rebase origin/main` per tap. The old throwaway-snapshot design minted an unrelated PARENTLESS root per build. That wedged every client mid-rebase, in add/add conflicts, after every publish. An already-wedged clone recovers once, with `brew update-reset`. Append-only objects also fix the dumb-HTTP consistency race.
 
-The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. It sweeps an expired entry on access. The map is capped by `tapCacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
+A publish mid-`brew update` can no longer orphan a ref a client already fetched.
 
-The DISK store is capped too, by `tapHistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
+The in-memory layer, in `tapcache.go`, is now a rebuild-rate gate plus an open `os.Root` cache. It allows at most one content re-check per `tapCacheTTL`, many seconds, per lineage. TapC caps the mapacheMaxEntries`, and eviction closes file descriptors only. As a result, the history stays.
+
+A re-check renders every visible project's formula and every past release's history formula. It costs seconds on a busy registry. It runs off the request path. `awaitTapLineage` starts at most one refresh per lineage directory (`Handler.tapRefreshes`), detached from the request's cancellation and outside `tapMu`. A lineage with no tip yet waits for that refresh. A lineage with a tip waits at most `tapRefreshWait`, then serves the tip it already has, and the next request gets the new one.
+
+Only a slow refresh serves the tip.
+
+A failed refresh is an `errTapBuild` 500 for every request that waits on it. Every later request gets the same 500 until the next refresh succeeds, one `tapCacheTTL` later. `TestTapRefresh_FailureWithTipIsAnError` and `TestTapRefresh_FailureWithoutTipIsAnError` guard it. `TestServeUploadPack_FlushesBeforePackAssembly` guards the early flush. A refresh that once ran inside the request, under the global mutex, took longer than the CDN's origin timeout, and `brew update` failed with a 524.
+
+`TestTapRefresh_SlowRefreshServesPersistedTip` guards it.
+
+TapH caps the DISK storeistoryMaxLineages`. It evicts a whole lineage, LRU by directory mtime. A junk Host header or a deleted token is therefore unable to grow it without bound. `resetTapCache`, which runs from OnReady, deliberately does NOT remove the history root. It sweeps only a crash orphan, meaning a temp file, and the legacy `{TmpDir}/brew-tap` snapshot root. The cost is a handful of new small objects per content-changing publish per lineage.
 
 ## Smart-HTTP serving
 
@@ -126,9 +150,11 @@ Each root keeps its credential semantics. The smart pair is served DIRECTLY on `
 
 `POST .../git-upload-pack` is the fetch. It assembles a version-2 packfile on the fly, by a walk of the parent and tree links through the lineage's loose objects. A plain clone gets FULL history, so a later dumb or smart fetch fast-forwards. The pack is depth-bounded, with shallow and unshallow lines, only when the client sent `deepen`. A plain clone's capability echo was once mistaken for a depth request, which killed git with "expected ACK/NAK, got 'shallow'".
 
-Negotiation is stateless-minimal. A have is never ACKed. Each flush-terminated batch gets NAK until the client sends done. It never gets NAK plus a pack, which corrupts the next round once history makes git batch its haves.
+Negotiation is stateless `multi_ack_detailed`, as git's upload-pack answers it. Each flush-terminated batch gets `ACK <sha> common` for every have the lineage holds as a commit. Then `ACK <sha> ready` once one of them is an ancestor of the want, then NAK. It never gets a pack, which corrupts the next round once history makes git batch its haves. A have that is never ACKed makes git walk its whole local history in rounds and then fetch the whole tap again. Each `brew update` grew with the history until the CDN timed it out.
 
-The final pack is self-contained from the client's WANT, which is the sha the advertisement handed it. A publish that lands mid-clone can therefore never produce a ref and pack mismatch. The append-only store and the want together pin the tip. While a smart request streams, its lineage directory is pinned against the disk-cap eviction. `acquireTapLineage` does that, and `Handler.tapPins` holds the refcounts.
+The last request's pack stops at every common have and leaves out its tree closure, so a `brew update` receives only what the new commits add. Its response opens with `ACK <last common>`, or NAK when there is none, and is flushed before the pack is assembled. A deepen request keeps the full walk: a client-shallow have needs the parents a stop will cut off. `TestServeUploadPack_FetchSendsOnlyMissingObjects` and `TestSmartFetch_IncrementalPackFastForwards` guard it.
+
+The last pack is self-contained from the client's WANT, which is the sha the advertisement handed it, down to the haves the client holds. A publish that lands mid-clone can therefore never produce a ref and pack mismatch. The append-only store and the want together pin the tip. While a smart request streams, its lineage directory is pinned against the disk-cap eviction. `acquireTapLineage` does that, and `Handler.tapPins` holds the refcounts.
 
 Real git prefers smart automatically. `brew tap` and `brew update` now transfer one pack, instead of several loose GETs per past publish. A dumb client, which sends no service parameter, is byte-for-byte unchanged.
 

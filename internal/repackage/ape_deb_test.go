@@ -148,7 +148,7 @@ func TestDeb_NestedInstallDirsCarryDirectoryEntry(t *testing.T) {
 }
 
 // gzip streams carry no timestamps here and the launcher is derived only from
-// the package name and version, so the same inputs must produce the same deb --
+// the package name and version. The same inputs must produce the same deb --
 // the APT Packages index caches its sha256.
 func TestDeb_APEGenerationDeterministic(t *testing.T) {
 	t.Serial()

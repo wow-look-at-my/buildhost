@@ -1,22 +1,8 @@
 // Behavior tests for .github/actions/lib/download.ts, against a real HTTP server.
 
-const assert = require('node:assert');
-const http = require('node:http') as typeof import('node:http');
-
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/download`;
-const { fetchBody } = require(`${lib}.ts`);
-
-type Handler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void;
-
-async function serve(handler: Handler): Promise<{ url: string; close: () => Promise<void> }> {
-	const server = http.createServer(handler);
-	await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-	const port = (server.address() as import('node:net').AddressInfo).port;
-	return {
-		url: `http://127.0.0.1:${port}/f`,
-		close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),
-	};
-}
+import assert from 'node:assert';
+import { fetchBody } from '../../.github/actions/lib/download.ts';
+import { serve } from './fakes.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

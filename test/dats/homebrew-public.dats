@@ -1,8 +1,8 @@
 # The DOCUMENTED public Homebrew flow, executed verbatim, and what it must
 # leave on disk.
 #
-# The brew commands are not written here: scripts/brew-doc-flows.sh extracts
-# them from docs/homebrew.md and substitutes only the host, and this suite asserts the
+# The brew commands are not written here. scripts/brew-doc-flows.sh extracts
+# them from docs/homebrew.md and substitutes only the host. This suite asserts the
 # served /llms.txt agrees with them.
 #
 # The workflow starts the server and publishes the artifacts; $BUILDHOST_TOKEN,
@@ -23,11 +23,13 @@ shared:
 			echo "--- documented public flow, executed verbatim ---"
 			cat "$WORK/public.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/public.sh"
-			# The APE-shaped fixture installs here rather than in a test: dats
+			# The APE-shaped fixture installs here rather than in a test. Dats
 			# runs tests concurrently, and brew installs at the same time
 			# contend for the same prefix.
 			brew install pazer/build/ape-fixture
 			brew install pazer/build/versioned-fixture
+			# dep-app declares depends_on dep-lib. Only dep-app is named here.
+			brew install pazer/build/dep-app
 			TAP="$(brew --repository pazer/build)"
 			# Pull until the tap history holds that release.
 			for _ in $(seq 60); do
@@ -76,17 +78,23 @@ tests:
 			- "docs-agree"
 
 	# The tripwire against smuggling CI-only crutches into the executed
-	# commands: every line is a plain brew command or a token export, and the
+	# commands: every line is a plain brew command or a token export. The one
+	# exception is the git config header that carries the private tap's token,
+	# because brew has no command that stores a git credential. The
 	# tap/trust/install skeleton is present.
-	- desc: the documented flows are brew commands only, with tap, trust and install
+	- desc: the documented flows are brew commands only, plus the private token header
 	  cmd: |
 		set -eu
 		. {shared.env}
+		header="^git config --global \"http\\.http://$BREW_HOST/private/\\.extraHeader\" \"Authorization: Basic "
 		for leg in public private; do
 			"$REPO/scripts/brew-doc-flows.sh" "$leg" "$BREW_HOST" \
 				| grep -v '^[[:space:]]*$' | grep -v '^#' > flow.txt
-			if grep -qv '^\(brew\|export\) ' flow.txt; then
-				echo "$leg flow has a non-brew/export line:" >&2; cat flow.txt >&2; exit 1
+			if grep -v '^\(brew\|export\) ' flow.txt | grep -qv "$header"; then
+				echo "$leg flow has a line that is not brew, export or the token header:" >&2; cat flow.txt >&2; exit 1
+			fi
+			if [ "$leg" = private ]; then
+				grep -q "$header" flow.txt || { echo "private flow lost the token header" >&2; exit 1; }
 			fi
 			for want in 'brew tap ' 'brew trust ' 'brew install '; do
 				grep -q "^$want" flow.txt || { echo "$leg flow lost $want" >&2; exit 1; }
@@ -97,7 +105,7 @@ tests:
 		stdout:
 			- "flow-shape-ok"
 
-	# The generated formula opts out with skip_clean "bin"; this is what turns
+	# The generated formula opts out with skip_clean "bin". This is what turns
 	# a regression in that codegen red instead of shipping a binary users
 	# cannot run.
 	- desc: the installed binary keeps both the execute and the write bit
@@ -175,6 +183,18 @@ tests:
 	  outputs:
 		stdout:
 			- "one-per-project"
+
+	- desc: brew install of a formula installs the buildhost project it depends on
+	  cmd: |
+		set -euo pipefail
+		grep -n 'depends_on "pazer/build/dep-lib"' "$(brew --repository pazer/build)/Formula/dep-app.rb"
+		brew list --formula pazer/build/dep-lib >/dev/null
+		dep-lib
+		dep-app
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-dep-lib-ok"
+			- "buildhost-homebrew-dep-app-ok"
 
 	- desc: an APE-shaped formula installs, keeps its mode, and runs
 	  cmd: |

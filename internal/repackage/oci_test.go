@@ -139,7 +139,7 @@ func TestOCIRepackageEssentials(t *testing.T) {
 // apeBinary opens with the prologue and headers a real trampoline carries.
 var apeBinary = testAPE(machineAMD64, machineARM64)
 
-// An APE image is the base layer plus the binary, the binary is the ELF the
+// An APE image is the base layer plus the binary. The binary is the ELF the
 // trampoline would have staged, and every entrypoint spelling reaches a
 // launcher the base layer's shell can run.
 func TestOCIRepackageAPEImageLayout(t *testing.T) {
@@ -240,8 +240,8 @@ func TestOCIRepackageAPEImageLayout(t *testing.T) {
 	assert.NotContains(t, launcher, "TMPDIR", "nothing is staged at run time, so there is no TMPDIR to set")
 }
 
-// Every image gets the same layout, whatever kind of binary it was built from:
-// the binary out of the way under /usr/local/lib, and a launcher at each
+// Every image gets the same layout, whatever kind of binary it was built from.
+// The binary is out of the way under /usr/local/lib, and a launcher is at each
 // spelling. A layout that varies is a layout only some images are tested on.
 func TestOCIWriteLayerLayoutIsTheSameForEveryBinary(t *testing.T) {
 	t.Serial()

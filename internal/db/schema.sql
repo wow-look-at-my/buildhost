@@ -12,6 +12,7 @@ CREATE TABLE projects (
     default_branch TEXT NOT NULL DEFAULT 'master',
     create_service INTEGER NOT NULL DEFAULT 0,
     apt_depends TEXT NOT NULL DEFAULT '',
+    depends     TEXT NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -180,6 +181,12 @@ CREATE TABLE deleted_branches (
     PRIMARY KEY (project_id, branch)
 );
 
+CREATE TABLE server_settings (
+    name       TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Retention/GC indexes (mirrored from migrations/009_retention_indexes.sql).
 CREATE INDEX IF NOT EXISTS idx_releases_project_branch_version ON releases(project_id, git_branch, version_num DESC);
 CREATE INDEX IF NOT EXISTS idx_artifacts_storage_key  ON artifacts(storage_key);
@@ -229,3 +236,100 @@ CREATE TABLE run_locks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_locks_created ON run_locks(created_at);
+
+-- Visibility overrides (mirrored from migrations/020_visibility_overrides.sql).
+CREATE TABLE visibility_folders (
+    prefix     TEXT PRIMARY KEY,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE project_visibility (
+    project_id   INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+    mode         TEXT NOT NULL DEFAULT 'auto' CHECK (mode IN ('auto', 'public', 'private')),
+    auto_private INTEGER NOT NULL,
+    updated_at   DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE release_visibility (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(id) ON DELETE CASCADE,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE site_visibility (
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    branch     TEXT NOT NULL,
+    mode       TEXT NOT NULL CHECK (mode IN ('public', 'private')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (project_id, branch)
+);
+
+-- Run files (mirrored from migrations/022_run_files.sql).
+CREATE TABLE run_storage_runs (
+    repo_id    TEXT NOT NULL,
+    run_id     TEXT NOT NULL,
+    repo_path  TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    used_at    DATETIME NOT NULL DEFAULT (datetime('now')),
+    checked_at DATETIME,
+    ended_at   DATETIME,
+    PRIMARY KEY (repo_id, run_id)
+);
+
+CREATE TABLE run_files (
+    repo_id     TEXT NOT NULL,
+    run_id      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    reads       INTEGER NOT NULL DEFAULT 0,
+    read_at     DATETIME,
+    PRIMARY KEY (repo_id, run_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_run_files_storage_key ON run_files(storage_key);
+
+-- Cache entries (mirrored from migrations/024_cache_entries.sql).
+CREATE TABLE cache_entries (
+    repo_id     TEXT NOT NULL,
+    ref         TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    repo_path   TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    used_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    reads       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (repo_id, ref, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cache_entries_storage_key ON cache_entries(storage_key);
+CREATE INDEX IF NOT EXISTS idx_cache_entries_used_at ON cache_entries(used_at);
+
+-- Registry mirror (mirrored from migrations/025_registry_mirror.sql).
+CREATE TABLE mirror_blobs (
+    upstream    TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    media_type  TEXT NOT NULL DEFAULT '',
+    storage_key TEXT NOT NULL,
+    size        INTEGER NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    used_at     DATETIME NOT NULL DEFAULT (datetime('now')),
+    reads       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (upstream, digest)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mirror_blobs_storage_key ON mirror_blobs(storage_key);
+CREATE INDEX IF NOT EXISTS idx_mirror_blobs_used_at ON mirror_blobs(used_at);
+
+CREATE TABLE mirror_tags (
+    upstream    TEXT NOT NULL,
+    repository  TEXT NOT NULL,
+    tag         TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    media_type  TEXT NOT NULL,
+    checked_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (upstream, repository, tag)
+);

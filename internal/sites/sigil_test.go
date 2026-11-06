@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A branch or commit is named with the "@" sigil: /{project}/@{ref}/{path}.
-// It exists because "branch" is an ordinary path segment: a site holding a
-// directory called "branch" cannot be addressed at all through the older form,
-// and every URL in that form carries a segment that reads like part of the
-// site. "@" is outside both the ref and the project-name charsets, so the split
-// is exact.
+// A branch or commit is named with the "@" sigil: /{project}/@{ref}/{path}. It
+// exists because "branch" is an ordinary path segment: a site holding a
+// directory called "branch" cannot be addressed at all through the older form.
+// Every URL in that form carries a segment that reads like part of the site.
+// "@" is outside both the ref and the project-name charsets, so the split is
+// exact.
 //
-// These go through the REAL router, because that is where the risk is: the "@"
+// These go through the REAL router, because that is where the risk is. The "@"
 // reads share the literal-less apex route, which must lose to /branch/ and
 // /branches while still catching everything else.
 func TestBranchSigil_Serves(t *testing.T) {
@@ -56,7 +56,7 @@ func TestBranchSigil_Serves(t *testing.T) {
 }
 
 // The bare project path is the canonical site URL. Naming the default branch
-// says nothing extra, so "@<default>" collapses INTO the bare URL -- redirects
+// says nothing extra. "@<default>" collapses INTO the bare URL -- redirects
 // only ever run toward the shorter spelling, never away from it.
 func TestBranchSigil_DefaultBranchCollapsesToBareURL(t *testing.T) {
 	t.Serial()
@@ -138,7 +138,7 @@ func TestBranchSigil_LegacyFormRedirects(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"branch":"master"`)
 }
 
-// The sigil marks exactly where the project name ends, so a namespaced project
+// The sigil marks exactly where the project name ends. A namespaced project
 // needs no lookup to be addressed -- and a shorter project sharing its prefix
 // can never claim the URL.
 func TestBranchSigil_NamespacedProject(t *testing.T) {
@@ -161,7 +161,7 @@ func TestBranchSigil_NamespacedProject(t *testing.T) {
 }
 
 // Branch names may contain "/" (claude/foo). "@" says where the ref starts,
-// not where it ends, so the remainder is still resolved by longest match
+// not where it ends. The remainder is still resolved by longest match
 // against the project's sites -- the same rule the /branch/ form uses.
 func TestBranchSigil_SlashNamedBranch(t *testing.T) {
 	t.Serial()
@@ -275,10 +275,10 @@ func (e *testEnv) uploadSiteAtCommit(t *testing.T, project, branch, commit strin
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 }
 
-// A commit sha names the BUILD rather than the branch, so a link can pin the
-// exact site it was tested against instead of tracking whatever the branch
-// moves to. Every publish already records the commit (X-Git-Commit, defaulted
-// to github.sha by the publish action), so this needs nothing new from callers.
+// A commit sha names the BUILD rather than the branch. A link can pin the exact
+// site it was tested against instead of tracking whatever the branch moves to.
+// Every publish already records the commit (X-Git-Commit, defaulted to
+// github.sha by the publish action), so this needs nothing new from callers.
 func TestCommitSigil_Serves(t *testing.T) {
 	t.Serial()
 	const sha = "0f1e2d3c4b5a69788796a5b4c3d2e1f001234567"
@@ -325,7 +325,7 @@ func TestCommitSigil_Serves(t *testing.T) {
 }
 
 // A branch is always tried before a commit, so a branch whose name happens to
-// be hex keeps its URL -- no ref that resolved before can be repointed.
+// be hex keeps its URL. No ref that resolved before can be repointed.
 func TestCommitSigil_BranchWins(t *testing.T) {
 	t.Serial()
 	const hexBranch = "abcdef0"

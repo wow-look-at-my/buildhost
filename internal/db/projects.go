@@ -1,3 +1,5 @@
+// projects.go holds the projects code.
+
 package db
 
 import (
@@ -30,7 +32,13 @@ func (d *DB) CreateProject(ctx context.Context, p *Project) error {
 	}
 	id, _ := res.LastInsertId()
 	p.ID = id
-	return nil
+	// The requested state is the auto value. A folder rule can still override it.
+	if err := d.q.UpsertProjectVisibilityRow(ctx, UpsertProjectVisibilityRowParams{
+		ProjectID: p.ID, Mode: VisibilityAuto, AutoPrivate: p.IsPrivate,
+	}); err != nil {
+		return fmt.Errorf("insert project visibility: %w", err)
+	}
+	return d.applyProjectVisibility(ctx, p)
 }
 
 func (d *DB) GetProject(ctx context.Context, name string) (*Project, error) {
@@ -182,6 +190,10 @@ func (d *DB) RenameProject(ctx context.Context, id int64, oldName, newName strin
 	}
 	if err := q.InsertProjectAlias(ctx, InsertProjectAliasParams{Name: oldName, ProjectID: id}); err != nil {
 		return fmt.Errorf("alias %q -> %q: %w", oldName, newName, err)
+	}
+	// A dependent names this project in its deb Depends and its brew depends_on, so it must follow the rename.
+	if err := renameDepends(ctx, q, oldName, newName, id); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit rename: %w", err)

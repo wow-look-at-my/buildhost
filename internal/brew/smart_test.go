@@ -12,17 +12,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/router"
 )
 
 // smartTapServer serves the handler's smart+dumb tap endpoints under the real
 // git-subdomain paths so an actual git client can talk to them.
 func smartTapServer(t *testing.T, h *Handler) *httptest.Server {
 	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /brew/tap.git/info/refs", h.ServeTapInfoRefs)
-	mux.HandleFunc("POST /brew/tap.git/git-upload-pack", h.ServeTapUploadPack)
-	mux.HandleFunc("GET /brew/tap.git/", h.ServeTap)
-	ts := httptest.NewServer(mux)
+	rt := router.New()
+	rt.HandleFunc("GET /brew/tap.git/info/refs", router.Allow, h.ServeTapInfoRefs)
+	rt.HandleFunc("POST /brew/tap.git/git-upload-pack", router.Allow, h.ServeTapUploadPack)
+	rt.HandleFunc("GET /brew/tap.git/", router.Allow, h.ServeTap)
+	ts := httptest.NewServer(rt)
 	t.Cleanup(ts.Close)
 	return ts
 }
@@ -37,8 +38,8 @@ func lineageDirFor(t *testing.T, h *Handler) string {
 }
 
 // The smart advertisement must describe the SAME tip as the dumb path -- both
-// read the lineage's persisted refs/heads/main -- and the info/refs route
-// without a service parameter must keep serving the dumb file byte-for-byte.
+// read the lineage's persisted refs/heads/main. The info/refs route without a
+// service parameter must keep serving the dumb file byte-for-byte.
 func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 	t.Serial()
 	h, d, store := setupTest(t)
@@ -79,10 +80,10 @@ func TestServeTapInfoRefs_AdvertisementDerivesFromLineageTip(t *testing.T) {
 }
 
 // A plain (non-shallow) smart clone -- what `brew tap` runs -- must transfer
-// the tap's FULL history: every commit reachable from the tip, so later dumb
-// or smart fetches fast-forward. The client echoing advertised capabilities
-// must not be mistaken for a shallow request (the "expected ACK/NAK, got
-// 'shallow <sha>'" failure).
+// the tap's FULL history. This covers every commit reachable from the tip,
+// so later dumb or smart fetches fast-forward. The client echoing advertised
+// capabilities must not be mistaken for a shallow request (the "expected
+// ACK/NAK, got 'shallow <sha>'" failure).
 func TestServeUploadPack_FullCloneTransfersWholeHistory(t *testing.T) {
 	t.Serial()
 	requireGit(t)
@@ -152,9 +153,9 @@ func mustGet(t *testing.T, url string) int {
 	return resp.StatusCode
 }
 
-// The consistency guarantee for a publish landing mid-clone: the pack is
+// The consistency guarantee for a publish landing mid-clone. The pack is
 // built from the commit the client WANTED (the sha the advertisement handed
-// it), which the append-only lineage still holds even though the tip has
+// it). The append-only lineage still holds that commit even though the tip has
 // advanced past it.
 func TestServeUploadPack_ServesRequestedWantAfterTipAdvance(t *testing.T) {
 	t.Serial()

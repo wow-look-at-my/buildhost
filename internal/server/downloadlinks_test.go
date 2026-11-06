@@ -11,11 +11,12 @@ import (
 )
 
 // TestPrivateProject_TemporaryDownloadLink exercises the whole signed-link path
-// end to end against a real server: a private artifact is unreachable without a
+// end to end against a real server. A private artifact is unreachable without a
 // credential, served by a valid signed &token= (no redirect, private cache), and
 // rejected for a tampered / wrong-artifact / expired token. The server and this
-// test share the same signing key because server.New -> auth.Init loaded it from
-// the data dir, and auth.MintDownloadToken uses that same process-global key.
+// test share. The same signing key because server.New -> auth.Init loaded it
+// from the data dir, and auth.MintDownloadToken uses that same process-global
+// key.
 func TestPrivateProject_TemporaryDownloadLink(t *testing.T) {
 	t.Serial()
 	env := setup(t)

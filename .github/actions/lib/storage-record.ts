@@ -26,7 +26,7 @@ interface Record_ {
 export async function recordReleaseArtifacts(octokit: Octokit, core: Core, context: Context, params: {
 	server: string; project?: string; version?: string; artifacts: readonly PublishedArtifact[];
 }): Promise<boolean> {
-	// Downloads live on the dl.<host> subdomain -- buildhost dispatches services by the earliest label of the request Host. origin/master
+	// Downloads live on the dl.<host> subdomain.
 	const dl = (() => { const u = new URL(params.server); u.host = `dl.${u.host}`; return u.origin; })();
 	const records: Record_[] = [];
 	for (const a of params.artifacts) {
@@ -52,8 +52,8 @@ export async function recordSite(octokit: Octokit, core: Core, context: Context,
 	server: string; project: string; branch: string; version: string; sha256: string;
 }): Promise<boolean> {
 	// No artifact_url: a site is served unpacked, so no URL returns the archive
-	// bytes this digest covers, and a record must never point at bytes that hash
-	// to something else.
+	// bytes this digest covers. A record must never point at bytes that hash to
+	// something else.
 	return post(octokit, core, context, [{
 		name: params.project, version: params.version, digest: `sha256:${params.sha256}`,
 		registry_url: params.server, repository: params.project, path: `branch/${params.branch}`,
@@ -121,7 +121,7 @@ async function post(octokit: Octokit, core: Core, context: Context, records: Rec
 	const owner = context.repo.owner;
 	for (const rec of records) {
 		// A record without the link back to the bytes its digest covers is a
-		// silent downgrade, so an over-long URL fails rather than dropping it.
+		// silent downgrade. So an over-long URL fails rather than dropping it.
 		if (rec.artifact_url !== undefined && rec.artifact_url.length > MAX_ARTIFACT_URL) {
 			core.setFailed(`Cannot record ${label(rec)}: its artifact_url is ${rec.artifact_url.length} chars, over the API's ${MAX_ARTIFACT_URL}-char limit. Recording it without the URL would silently drop the only link back to the bytes the digest covers; shorten the project name or change the download URL scheme.`);
 			return false;

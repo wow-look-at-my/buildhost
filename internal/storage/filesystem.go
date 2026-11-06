@@ -1,3 +1,5 @@
+// filesystem.go holds the filesystem code.
+
 package storage
 
 import (
@@ -12,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 	mmap "github.com/wow-look-at-my/go-mmap"
@@ -127,8 +131,8 @@ func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string,
 	return raw.Put(ctx, r)
 }
 
-// OpenReaderAt returns a random-access view of a blob, mapped rather than read,
-// so a container's index can be followed with seeks instead of a scan. A blob
+// OpenReaderAt returns a random-access view of a blob, mapped rather than read.
+// A container's index can be followed with seeks instead of a scan. A blob
 // stored zstd-compressed has no offsets to seek to and yields
 // ErrRandomUnsupported.
 func (fs *Filesystem) OpenReaderAt(_ context.Context, key string) (ReaderAtCloser, int64, error) {
@@ -248,9 +252,10 @@ func (z *mmapZstdReadCloser) Close() error {
 }
 
 // GetCompressed returns a blob's stored bytes WITHOUT decompressing them, so a
-// caller can pass a zstd-compressed blob straight through to a client that
-// accepts zstd (Content-Encoding: zstd) instead of decompressing it server-side.
-// A blob stored compressed yields the raw zstd stream (Encoding "zstd", Size =
+// caller can pass a zstd-compressed blob straight through to a client. That
+// client accepts zstd (Content-Encoding: zstd) instead of decompressing it
+// server-side. A blob stored compressed yields the raw zstd stream (Encoding
+// "zstd", Size =
 func (fs *Filesystem) GetCompressed(_ context.Context, key string) (*CompressedBlob, error) {
 	if !validStorageKey.MatchString(key) {
 		return nil, os.ErrNotExist
@@ -331,6 +336,36 @@ func (fs *Filesystem) Exists(_ context.Context, key string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// TempMaxAge is how old a Put temp file must be before SweepTemp deletes it.
+const TempMaxAge = 24 * time.Hour
+
+// SweepTemp deletes the temp files that a Put killed by a crash or restart
+// left in the root. Nothing else deletes them. It returns the count and bytes.
+func (fs *Filesystem) SweepTemp(now time.Time) (int, int64, error) {
+	entries, err := os.ReadDir(fs.root.Name())
+	if err != nil {
+		return 0, 0, fmt.Errorf("read storage root: %w", err)
+	}
+	var n int
+	var freed int64
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !(strings.HasPrefix(name, ".upload-") || strings.HasPrefix(name, ".compress-")) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || now.Sub(info.ModTime()) < TempMaxAge {
+			continue
+		}
+		if err := fs.root.Remove(name); err != nil {
+			return n, freed, fmt.Errorf("remove %s: %w", name, err)
+		}
+		n++
+		freed += info.Size()
+	}
+	return n, freed, nil
 }
 
 func (fs *Filesystem) rel(key string) string {

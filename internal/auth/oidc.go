@@ -1,3 +1,5 @@
+// EventNotAllowedError rejects a verified token whose event is outside the allowlist.
+
 package auth
 
 import (
@@ -56,6 +58,7 @@ type oidcClaims struct {
 	RunID             string `json:"run_id"`
 	RunAttempt        string `json:"run_attempt"`
 	Actor             string `json:"actor"`
+	Ref               string `json:"ref"`
 }
 
 const oidcLeeway = 60 * time.Second
@@ -94,6 +97,8 @@ type VerifyResult struct {
 	RunAttempt string
 	// Actor is the GitHub login that triggered the workflow run.
 	Actor string
+	// Ref is the git ref the workflow run is for.
+	Ref string
 }
 
 func (v *OIDCVerifier) VerifyToken(ctx context.Context, raw string, policies []db.OIDCPolicy) (*db.APIToken, string, error) {
@@ -174,6 +179,7 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		result.RepoPath = verified.repoPath()
 		result.OwnerID, result.RepoID = ownerID, repoID
 		result.RunID, result.RunAttempt = verified.RunID, verified.RunAttempt
+		result.Ref = verified.Ref
 	}
 
 	if matchedPolicy != nil {
@@ -274,7 +280,7 @@ func (c *oidcClaims) projectName() string {
 func RepoProjectName(repo string) string {
 	// A project name opens with a letter or digit, so `.github` owns `github`.
 	name := strings.TrimLeft(strings.ToLower(repo), "._-")
-	if !validOIDCProjectName(name) {
+	if !validOIDCProjectName(name) || ReservedProjectName(name) {
 		return ""
 	}
 	return name

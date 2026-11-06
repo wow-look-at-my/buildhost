@@ -1,3 +1,5 @@
+// healthResponse is the JSON body of GET /healthz.
+
 package server
 
 import (
@@ -25,8 +27,8 @@ const (
 )
 
 // healthResponse is the JSON body of GET /healthz. It always reports the build
-// the server is running (commit and version) so a deploy can be verified
-// without a dedicated version endpoint; status is "ok" only when the database
+// the server is running, as commit and version. A deploy is then verified
+// without a dedicated version endpoint. Status is "ok" only when the database
 // is reachable.
 type healthResponse struct {
 	Status   string `json:"status"` // "ok" when healthy, "unhealthy" otherwise
@@ -34,7 +36,9 @@ type healthResponse struct {
 	Version  string `json:"version"`
 	Modified bool   `json:"modified,omitempty"` // built from a dirty working tree
 	Started  string `json:"started"`
-	Error    string `json:"error,omitempty"` // failure detail when unhealthy
+	// GitHubCredential is "app", "token" or "none": what buildhost authenticates its own GitHub calls with.
+	GitHubCredential string `json:"github_credential"`
+	Error            string `json:"error,omitempty"` // failure detail when unhealthy
 }
 
 // startedAt lets a client that saw a dropped connection tell a restart from a network fault.
@@ -56,11 +60,12 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 
 	health := func(w http.ResponseWriter, r *http.Request) {
 		resp := healthResponse{
-			Status:   "ok",
-			Commit:   buildinfo.Commit(),
-			Version:  buildinfo.Version(),
-			Modified: buildinfo.Get().Modified,
-			Started:  startedAt.Format(time.RFC3339),
+			Status:           "ok",
+			Commit:           buildinfo.Commit(),
+			Version:          buildinfo.Version(),
+			Modified:         buildinfo.Get().Modified,
+			Started:          startedAt.Format(time.RFC3339),
+			GitHubCredential: auth.GitHubCredentialSource(),
 		}
 		code := http.StatusOK
 		if err := healthDB.PingContext(r.Context()); err != nil {
@@ -69,8 +74,18 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 			code = http.StatusServiceUnavailable
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(resp)
+	}
+	// The container healthcheck calls localhost or an IP, so this gate denies
+	// the CDN-cached hosts and does not use primaryOnly.
+	healthz := func(w http.ResponseWriter, r *http.Request) {
+		if auth.IsCachedContentHost(r.Host) {
+			http.NotFound(w, r)
+			return
+		}
+		health(w, r)
 	}
 	readyToUpdate := func(w http.ResponseWriter, _ *http.Request) {
 		if admin.InflightWrites() > 0 {
@@ -80,7 +95,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	auth.HandleRaw("GET /healthz", health)
+	auth.HandleRaw("GET /healthz", healthz)
 	auth.HandleRaw("GET /ready-to-update", readyToUpdate)
 
 	auth.HandleRaw("GET "+wellKnownHealth, health)

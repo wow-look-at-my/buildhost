@@ -33,6 +33,7 @@ func setupTest(t *testing.T) (*Handler, *db.DB, *storage.Filesystem) {
 	tmp := filepath.Join(dataDir, "tmp")
 	require.NoError(t, os.MkdirAll(tmp, 0o755))
 	h := &Handler{DB: d, Store: store, Gen: repackage.NewGenerator(store, d, tmp), TmpDir: tmp, DataDir: dataDir}
+	t.Cleanup(h.waitTapRefreshes)
 	return h, d, store
 }
 
@@ -329,7 +330,7 @@ func TestParseRoute_FoldedTapNameResolvesToProject(t *testing.T) {
 
 // BUG guard: a single-OS project's formula must carry a TOP-LEVEL url/sha256
 // and a depends_on gate. With only on_<os> stanzas, Homebrew on the OTHER
-// platform found no stable URL ("formula requires at least a URL") and the
+// platform found no stable URL ("formula requires at least a URL"). The
 // failed import poisoned the whole tap for that platform.
 func TestServeFormula_LinuxOnlyCarriesTopLevelURLAndDependsOnLinux(t *testing.T) {
 	t.Serial()

@@ -150,7 +150,8 @@ func TestVerifyToken_TrustedIssuer_ImmutableSubject_OrgCaseInsensitive(t *testin
 
 // The dedicated repository / repository_owner / *_id claims are preferred over
 // subject parsing, and the numeric IDs are surfaced for pinning -- from the
-// claims when present, else from an immutable subject's @id suffixes.
+// claims. This happens when present, else from an immutable subject's @id
+// suffixes.
 func TestVerifyToken_TrustedIssuer_DedicatedClaimsPreferred(t *testing.T) {
 	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -240,7 +241,7 @@ func TestOrgAllowed(t *testing.T) {
 
 // An allowlist entry pinned to a different owner ID refuses the token even
 // though the org NAME matches -- the resurrection case for the allowlist
-// itself -- and the error names the offending ID.
+// itself. The error names the offending ID.
 func TestVerifyToken_TrustedIssuer_OrgIDPinned_Mismatch(t *testing.T) {
 	t.Serial()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)

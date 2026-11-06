@@ -1,3 +1,5 @@
+// Config controls retention policy.
+
 package retention
 
 import (
@@ -89,13 +91,19 @@ type Report struct {
 
 	BranchSync BranchSync // what the pre-run sync of deleted branches changed
 
+	DeletedBranchReleases []ReleaseRef  // on a branch GitHub confirms is gone
+	BranchChecks          []BranchCheck // every branch the deleted-branch pass asked GitHub about
+
+	// Artifact-metadata bookkeeping for the evicted releases. An artifact whose
 	RecordsMarkedDeleted int // records successfully marked deleted
 	RecordsUnmarked      int // records that could NOT be marked (see RecordErrors)
 	RecordErrors         []string
 }
 
 // Releases is the total number of releases evicted (or that would be).
-func (r Report) Releases() int { return len(r.EvictedReleases) + len(r.AbandonedReleases) }
+func (r Report) Releases() int {
+	return len(r.EvictedReleases) + len(r.AbandonedReleases) + len(r.DeletedBranchReleases)
+}
 
 // Plan computes what eviction would do without changing anything.
 func (r *Retention) Plan(ctx context.Context) (Report, error) { return r.run(ctx, false) }
@@ -135,16 +143,24 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		ids = append(ids, e.ID)
 	}
 
+	refs := append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...)
+	return rep, r.evict(ctx, &rep, refs, ids, enforce)
+}
+
+// evict deletes the given releases, frees the blobs nothing else references,
+// and retracts their storage records. With enforce false it changes nothing
+// and fills rep with what it would do.
+func (r *Retention) evict(ctx context.Context, rep *Report, refs []ReleaseRef, ids []int64, enforce bool) error {
 	if len(ids) == 0 {
-		return rep, nil
+		return nil
 	}
 
 	// Capture what each doomed release holds BEFORE the rows go: after eviction
-	doomed := r.collectRecords(ctx, append(append([]ReleaseRef{}, rep.EvictedReleases...), rep.AbandonedReleases...))
+	doomed := r.collectRecords(ctx, refs)
 
-	freed, candidates, err := r.db.EvictReleases(ctx, ids, enforce)
-	if err != nil {
-		return rep, fmt.Errorf("evict releases: %w", err)
+	freed, candidates, evictErr := r.db.EvictReleases(ctx, ids, enforce)
+	if evictErr != nil && len(freed) == 0 {
+		return fmt.Errorf("evict releases: %w", evictErr)
 	}
 	rep.BlobsDeleted = len(freed)
 	rep.BlobsRetained = candidates - len(freed)
@@ -160,15 +176,21 @@ func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 		}
 	}
 
+	if evictErr != nil {
+		// Earlier batches committed and their blobs are deleted above. Which releases they held is unknown here, so no record is retracted.
+		slog.ErrorContext(ctx, "retention: eviction stopped part way; storage records of the releases it deleted are not retracted", "releases", len(ids), "err", evictErr)
+		return fmt.Errorf("evict releases: %w", evictErr)
+	}
+
 	// Only a run that deleted has anything to retract. A dry run reports the
 	// count it WOULD mark, so an operator sees the work before
 	if enforce {
-		r.markRecordsDeleted(ctx, &rep, doomed)
+		r.markRecordsDeleted(ctx, rep, doomed)
 	} else {
 		rep.RecordsUnmarked = len(doomed)
 	}
 
-	return rep, nil
+	return nil
 }
 
 type doomedRecord struct {
@@ -179,9 +201,9 @@ type doomedRecord struct {
 }
 
 // collectRecords resolves the artifacts of the releases about to be evicted.
-// Releases whose project records no github_repo are skipped: the record was
+// Releases whose project records no github_repo are skipped. The record was
 // posted under some org's linked artifacts page and without the repo there is
-// no way to know which, so there is nothing addressable to retract.
+// no way to know which. There is nothing addressable to retract.
 func (r *Retention) collectRecords(ctx context.Context, refs []ReleaseRef) []doomedRecord {
 	var out []doomedRecord
 	repos := make(map[int64]string, len(refs))

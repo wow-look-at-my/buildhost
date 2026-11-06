@@ -114,8 +114,8 @@ func seedNPMPackageReleases(t *testing.T, project string, n int) []string {
 }
 
 // TestRouter_Packument_ManifestCacheBoundsBlobReads is the regression test for
-// the registry hang: a warm packument must read NO blobs at all, however many
-// releases the project has, and must serve the same manifest fields it served
+// the registry hang. A warm packument must read NO blobs at all, however many
+// releases the project has. It must serve the same manifest fields it served
 // while cold.
 func TestRouter_Packument_ManifestCacheBoundsBlobReads(t *testing.T) {
 	t.Serial()
@@ -144,7 +144,7 @@ func TestRouter_Packument_ManifestCacheBoundsBlobReads(t *testing.T) {
 }
 
 // TestRouter_Packument_SharedBlobExtractedOnce covers the other way a project
-// accumulates releases cheaply: a re-release of unchanged bytes registers the
+// accumulates releases cheaply. A re-release of unchanged bytes registers the
 // SAME content-addressed blob (a hash-reference upload), so however many
 func TestRouter_Packument_SharedBlobExtractedOnce(t *testing.T) {
 	t.Serial()
@@ -184,11 +184,11 @@ func TestRouter_Packument_SharedBlobExtractedOnce(t *testing.T) {
 	assert.Equal(t, 1, counter.count(), "every sharing release got its own cache row")
 }
 
-// TestRouter_Packument_UnreadableBlobIsCached pins the other half of the
-// bound: a blob that is not a readable npm tarball is a final answer about that
-// artifact, so it must be cached too. Re-reading it on every request would keep
-// the per-release blob read -- and the hang -- for exactly the packages whose
-// manifests can never be read.
+// TestRouter_Packument_UnreadableBlobIsCached pins the other half of the bound.
+// A blob that is not a readable npm tarball is a final answer about that
+// artifact. It must be cached too. Re-reading it on every request would keep
+// the per-release blob read -- and the hang. It would keep them for exactly
+// the packages whose manifests can never be read.
 func TestRouter_Packument_UnreadableBlobIsCached(t *testing.T) {
 	t.Serial()
 	seedNPMPackage(t, "packument-unreadable", "1.0.0", "not a gzip tarball")
@@ -222,9 +222,9 @@ func TestRouter_Packument_FillBudgetFailsLoudly(t *testing.T) {
 }
 
 // TestRouter_Packument_BudgetFailureConverges proves the failure above is
-// self-healing rather than permanent: whatever a budget-limited request managed
-// to extract is committed, so a retry has less to do and the packument
-// eventually serves.
+// self-healing rather than permanent. Whatever a budget-limited request managed
+// to extract is committed. So a retry has less to do. The packument eventually
+// serves.
 func TestRouter_Packument_BudgetFailureConverges(t *testing.T) {
 	t.Serial()
 	const releases = 3

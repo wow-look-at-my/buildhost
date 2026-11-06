@@ -1,3 +1,5 @@
+// debdigest.go holds the debdigest code.
+
 package apt
 
 import (
@@ -75,6 +77,9 @@ func debDigestFingerprint(project *db.Project, a *db.Artifact) string {
 	// Only a set value joins the inputs, so a project with no Depends keeps its cached digest.
 	if project.AptDepends != "" {
 		inputs = append(inputs, "depends="+project.AptDepends)
+	}
+	if project.Depends != "" {
+		inputs = append(inputs, "project-depends="+project.Depends)
 	}
 	for _, s := range inputs {
 		hsh.Write([]byte(s))
