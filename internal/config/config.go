@@ -374,12 +374,12 @@ func Load() Config {
 			c.RetentionKeepN = n
 		}
 	}
-	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_KEEP_N"); v != "" {
+	if v := Getenv("BUILDHOST_RETENTION_BRANCH_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionBranchKeepN = n
 		}
 	}
-	if v := os.Getenv("BUILDHOST_RETENTION_BRANCH_TTL_DAYS"); v != "" {
+	if v := Getenv("BUILDHOST_RETENTION_BRANCH_TTL_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionBranchTTL = n
 		}
