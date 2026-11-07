@@ -39,7 +39,6 @@ func (b *Brew) Applicable(a db.Artifact) bool {
 // brewTemplate always emits a TOP-LEVEL url/sha256 (the canonical resource,
 
 var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }}{{ .PrivateStrategy }}
-
 {{ end }}class {{ .ClassName }} < Formula
   desc "{{ .Description }}"
   homepage "{{ .Homepage }}"
