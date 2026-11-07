@@ -1,9 +1,7 @@
 // Behavior tests for .github/actions/lib/preview-comment.ts.
 
-const assert = require('node:assert');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/preview-comment`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the composite.
-const { commentPreview, marker } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import { commentPreview, marker } from '../../.github/actions/lib/preview-comment.ts';
 
 type Sent = Record<string, unknown>;
 const ctx = { repo: { owner: 'wow-look-at-my', repo: 'js-snippets' } };
@@ -55,7 +53,7 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(listed, []);
 	assert.strictEqual(created[0].issue_number, 99);
 
-	// --- sticky: the second publish edits the first comment ---------------
+	// --- sticky: the next publish edits the earliest comment ---------------
 	reset();
 	await run(gh([{ number: 74 }], [{ id: 5, body: 'unrelated' }, { id: 8, body: `${mark}\nold` }]));
 	assert.deepStrictEqual(created, []);
@@ -74,7 +72,6 @@ async function main(): Promise<void> {
 	assert.deepStrictEqual(created, []);
 	assert.match(info[0], /No open pull request/);
 
-	// A publish with no branch to look up cannot name one either.
 	reset();
 	assert.strictEqual(await run(gh(new Error('must not be called')), { headRef: '' }), true);
 	assert.deepStrictEqual(listed, []);
@@ -95,8 +92,7 @@ async function main(): Promise<void> {
 	console.log('preview-comment: all checks passed');
 }
 
-// Node runs this file directly, so the rejection has to become an exit code
-// here.
+// Node runs this file directly.
 main().catch((err: unknown) => {
 	console.error(err);
 	process.exit(1);

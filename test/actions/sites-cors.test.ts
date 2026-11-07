@@ -1,4 +1,5 @@
-// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its redirects, in a real browser.
+// Asserts that a hosted site stays loadable CROSS-ORIGIN -- through its
+// redirects, in a real browser.
 
 const fs = require("node:fs");
 const os = require("node:os");
@@ -6,7 +7,7 @@ const path = require("node:path");
 const child_process = require("node:child_process");
 
 // Progress lines and the failure report. The suite reads stdout, so a failure
-// has to arrive as a non-zero exit, not as a label on a green run.
+// has to arrive as a non-exit, not as a label on a green run.
 const core = {
 	info: (m: string) => console.log(m),
 	error: (m: string) => console.error(m),
@@ -21,12 +22,13 @@ const HOST = `sites.localhost:${PORT}`;
 const SITES = `http://${HOST}`;
 const CONSUMER_ORIGIN = `http://localhost:${CONSUMER_PORT}`;
 const PROJECT = "cors-e2e";
-// The shape that broke: a PRIVATE project serving one public site branch (X-Public-Site).
+// The shape that broke: a PRIVATE project serving a single public site branch
+// (X-Public-Site), which is how every PR preview.
 const PRIVATE_PROJECT = "cors-e2e-private";
 const MARKER = "site-module-loaded";
 
-// The router dispatches on the Host's first label, so the sites service has to
-// be addressed by name. GitHub runners resolve *.localhost to loopback (the
+// The router dispatches on the Host's earliest label, so the sites service has
+// to be addressed by name. GitHub runners resolve *.localhost to loopback (the
 // same assumption image-strips-e2e.ts makes for static.localhost); say so
 // outright rather than letting an unrelated-looking connection error surface.
 {
@@ -41,7 +43,10 @@ const MARKER = "site-module-loaded";
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "buildhost-cors-e2e-"));
 const binAbs = path.resolve(BIN);
-// An APE starts through its own shell trampoline: a direct execve of it fails ENOEXEC.
+// An APE starts through its own shell trampoline: a direct execve of it fails
+// ENOEXEC, because nothing here registers an APE binfmt handler. A shell reads
+// the header and does the rest, which is what a bash "run:" step does
+// implicitly and node's spawn does not.
 const isAPE = fs.readFileSync(binAbs).subarray(0, 2).toString() === "MZ";
 const runner = (args: string[]): [string, string[]] =>
 	isAPE ? ["sh", [binAbs, ...args]] : [binAbs, args];
@@ -51,6 +56,8 @@ const serverEnv = {
 	BUILDHOST_DB_PATH: path.join(dataDir, "buildhost.db"),
 	BUILDHOST_LISTEN_ADDR: `127.0.0.1:${PORT}`,
 	BUILDHOST_ADMIN_LISTEN_ADDR: `127.0.0.1:19090`,
+	// Required. This server is addressed by several Hosts, so none is canonical.
+	BUILDHOST_PRIMARY_DOMAIN: "*",
 };
 
 function bootstrapToken(): string {
@@ -135,9 +142,9 @@ async function assertChainCORS(label: string, startPath: string, wantRedirect: b
 async function main(): Promise<void> {
 const server = child_process.spawn(...runner(["serve"]), { env: serverEnv, stdio: ["ignore", "pipe", "pipe"] });
 let serverLog = "";
-server.stdout.on("data", (d) => (serverLog += d));
-server.stderr.on("data", (d) => (serverLog += d));
-server.on("exit", (code) => {
+server.stdout.on("data", (d: Buffer) => (serverLog += d));
+server.stderr.on("data", (d: Buffer) => (serverLog += d));
+server.on("exit", (code: number | null) => {
 	if (code !== 0 && code !== null) core.error(`buildhost serve exited ${code}:\n${serverLog}`);
 });
 
@@ -238,9 +245,10 @@ try {
 	// Plain serves, which were never broken -- so a regression here is caught too.
 	await assertChainCORS("canonical @branch file", `/${PROJECT}/@library/ui/mod.js`, false);
 	await assertChainCORS("bare apex file", `/${PROJECT}/index.html`, false);
-	// The production shape: private project, public site branch, ANONYMOUS.
+	// The production shape.
 	await assertChainCORS("private project, public branch (legacy /branch/)", `/${PRIVATE_PROJECT}/branch/library/ui/mod.js`, true);
 
+	// This is the actual user-visible claim.
 	const MODULE_URL = `${SITES}/${PRIVATE_PROJECT}/branch/library/ui/mod.js`;
 	const page_html = `<!doctype html><meta charset=utf-8><title>consumer</title><script type="module">
   const done = (t) => { window.__result = t; };

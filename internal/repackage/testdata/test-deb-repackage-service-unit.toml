@@ -1,0 +1,11 @@
+[Unit]
+Description=A test application
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/testapp
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

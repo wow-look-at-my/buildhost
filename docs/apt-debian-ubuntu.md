@@ -9,7 +9,7 @@ curl -fsSL https://apt.pazer.build/myapp/install.sh | sudo sh
 sudo apt-get install myapp
 ```
 
-For a private project, pass a read token. The installer also records it in `/etc/apt/auth.conf.d/`. That covers the apt host and the static host the `.deb` download redirects to.
+For a private project, pass a read token. The installer then adds the one authenticated source, `apt.<domain>/private`, instead of the project's own repository. It records the token in `/etc/apt/auth.conf.d/buildhost-private.conf`. See "The authenticated source" below.
 
 ```bash
 curl -fsSL -H "Authorization: Bearer $TOKEN" https://apt.pazer.build/myapp/install.sh \
@@ -30,6 +30,26 @@ echo "deb [signed-by=/etc/apt/keyrings/buildhost.gpg] https://apt.pazer.build/my
   | sudo tee /etc/apt/sources.list.d/myapp.list
 sudo apt update && sudo apt install myapp
 ```
+
+## The authenticated source
+
+`apt.<domain>/private` is ONE repository scoped to the credential. It lists every public project, plus each private project the token can read. One source line and one auth entry therefore cover a package and all of its private dependencies. It is the apt counterpart of the authenticated brew tap. An anonymous request gets a 401 with a Basic challenge, because apt sends the credential from `auth.conf` only after one. A private deb redirects to a signed download link.
+
+The apt host is the only one that needs the token.
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings /etc/apt/auth.conf.d
+curl -fsSL -u "token:$TOKEN" https://apt.pazer.build/private/key.asc \
+  | sudo tee /etc/apt/keyrings/buildhost-private.asc >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/buildhost-private.asc] https://apt.pazer.build/private stable main" \
+  | sudo tee /etc/apt/sources.list.d/buildhost-private.list
+printf 'machine https://apt.pazer.build/private\nlogin token\npassword %s\n' "$TOKEN" \
+  | sudo tee /etc/apt/auth.conf.d/buildhost-private.conf >/dev/null
+sudo chmod 600 /etc/apt/auth.conf.d/buildhost-private.conf
+sudo apt update && sudo apt install myapp
+```
+
+Keep the scheme in the `machine` line: apt applies a line with no scheme to https only. A project named `private` has no per-project repository, because this path takes it.
 
 ## Private projects
 
@@ -73,3 +93,18 @@ This applies to a buildhost-GENERATED deb only, which means `fmt=deb`, from this
 A project declares its runtime prerequisites in Debian relationship syntax, such as `bubblewrap | docker.io`. The generated deb and the Packages entry then carry a `Depends:` line. Set it with `apt_depends` on the `buildhost-publish` or `buildhost-create-release` action, or with `--apt-depends` on `buildhost publish`.
 
 An empty input leaves the stored value untouched. `PATCH /api/v1/projects/{project}` with `{"apt_depends": ""}` clears it. The server refuses a value that is not relationship syntax. That refusal fails the publish.
+
+## Dependencies on other buildhost projects (depends)
+
+A project can also name the buildhost projects it depends on, such as `ascii-timeline`. Set it with `depends` on the `buildhost-publish` or `buildhost-create-release` action, with `--depends` on `buildhost publish`, or with go-toolchain's `depends` input. The `Depends:` line then names each one by its deb package name, ahead of `apt_depends`.
+
+apt resolves a Depends only from a repository it configured, and each project is its own repository. Without a token, the generated `install.sh` therefore also adds the repository of every dependency, and of their dependencies in turn. That token is with a keyring and a source list for each one. With a token it adds the one authenticated source, which already lists them all. `apt-get install api-cli` then installs `ascii-timeline` too:
+
+```bash
+curl -fsSL https://apt.pazer.build/api-cli/install.sh | sudo sh
+sudo apt-get install api-cli
+```
+
+A private dependency needs a read token, even under a public project: `curl -fsSL https://apt.pazer.build/api-cli/install.sh | sudo BUILDHOST_TOKEN=$TOKEN sh`. The installer stops with an error that names the dependency when `BUILDHOST_TOKEN` is unset. The server refuses a name it cannot resolve, or one the publishing token cannot read, as an unknown project, and the publish fails. It also refuses a project that depends on itself, directly or through a cycle. An absent input leaves the stored list untouched. `PATCH /api/v1/projects/{project}` with `{"depends": []}` clears it.
+
+A rename of a dependency rewrites every list that names it.

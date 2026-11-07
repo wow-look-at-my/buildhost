@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       # The same script the //go:generate directive runs.
       - run: ./scripts/build-admin-frontend.sh
-      # One job, so the built site is right here: no artifact hand-off at all.
+      # A single job, so the built site is right here: no artifact hand-off at all.
       - uses: ./.github/actions/buildhost-publish-site
         with:
           branch: ${{ github.ref_name }}

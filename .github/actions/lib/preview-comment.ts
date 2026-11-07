@@ -6,8 +6,8 @@ export interface Context { repo: { owner: string; repo: string } }
 interface Comment { id: number; body?: string | null }
 
 // The injected octokit is callable AND carries `rest`, so it does not match a
-// plain object interface at a call site. The narrowing happens here, once,
-// rather than at every caller.
+// plain object interface at a call site. The narrowing happens here, a single
+// time, rather than at every caller.
 export interface Octokit {
 	rest: {
 		pulls: { list(p: Record<string, unknown>): Promise<{ data: readonly { number: number }[] }> };
@@ -19,7 +19,7 @@ export interface Octokit {
 	};
 }
 
-/** One sticky comment per published site. */
+/** A single sticky comment per published site. */
 export function marker(project: string, branch: string): string {
 	return `<!-- buildhost-preview:${project}/${branch} -->`;
 }

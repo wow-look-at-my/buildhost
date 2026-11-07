@@ -1,3 +1,5 @@
+// upstream.go holds the upstream code.
+
 package goproxy
 
 import (
@@ -15,6 +17,8 @@ import (
 type upstreamSource struct {
 	client *http.Client
 	base   string
+	// privatePrefixes is only for the "not served here" message.
+	privatePrefixes []string
 }
 
 func newUpstreamSource(client *http.Client, base string) *upstreamSource {

@@ -9,12 +9,12 @@
 #
 # Both directions are different code paths and both are covered here:
 #
-#   push  -- docker uploads blobs and PUTs a manifest, and buildhost records a
+#   push -- docker uploads blobs and PUTs a manifest, and buildhost records a
 #            kind=docker release. Pulling that back proves the bytes round-trip.
-#   pull  -- a release published through the REST API carries no image at all.
-#            buildhost SYNTHESIZES one per platform at pull time. That path is
-#            where a dropped platform, an unlinked layer blob or a binary the
-#            kernel cannot exec turns into a pull that fails at the client.
+#            pull -- a release published through the REST API carries no image
+#            at all. That path is where a dropped platform, an unlinked layer
+#            blob or a binary the kernel cannot exec turns into a pull that
+#            fails at the client.
 #
 # The payload for the synthesized side is the repo's own APE. The pulled image
 # exercises the staged-ELF path and the shell in the base layer. Running it is
@@ -76,14 +76,13 @@ shared:
 			docker build -t "$REGISTRY/$PUSHED:v1" "$WORK/ctx"
 			docker push "$REGISTRY/$PUSHED:v1"
 
-			# PULL SIDE. No image is uploaded: buildhost synthesizes one from
-			# the published binary when a client asks for it.
+			# PULL SIDE.
 			auth -X POST "$BASE/api/v1/projects" -H 'Content-Type: application/json' \
 				-d "{\"name\":\"$SYNTH\",\"versioning\":\"auto\",\"is_private\":false}" >/dev/null
 			VERSION="$(auth -X POST "$BASE/api/v1/projects/$SYNTH/releases" \
 				-H 'Content-Type: application/json' -d '{"git_branch":"master"}' | jq -r .version)"
-			# Published once, covering several platforms, which is the shape the
-			# index bug appeared on: the canonical slot went missing from it.
+			# Published a single time, covering several platforms, which is the
+			# shape the index bug appeared on: the canonical slot went missing from it.
 			auth -X PUT --data-binary "@$BUILDHOST_BIN" -H "X-Artifact-Filename: $SYNTH" \
 				"$BASE/api/v1/projects/$SYNTH/releases/$VERSION/artifacts/ape?platforms=linux/amd64,linux/arm64,darwin/arm64" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/$SYNTH/releases/$VERSION/publish" >/dev/null

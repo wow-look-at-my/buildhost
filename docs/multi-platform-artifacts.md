@@ -33,7 +33,7 @@ curl -fSL -X PUT \
 From GitHub Actions, with the same OIDC identity every other publish uses:
 
 ```yaml
-- uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish@master
+- uses: wow-look-at-my/buildhost/.github/actions/buildhost-publish@lkgb
   with:
     project: go-toolchain
     path: build/

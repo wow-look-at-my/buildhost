@@ -33,6 +33,8 @@ shared:
 			BUILDHOST_DB_PATH="$WORK/data/buildhost.db"; export BUILDHOST_DB_PATH
 			BUILDHOST_LISTEN_ADDR=":$PORT"; export BUILDHOST_LISTEN_ADDR
 			BUILDHOST_ADMIN_LISTEN_ADDR=""; export BUILDHOST_ADMIN_LISTEN_ADDR
+			# Required. This suite addresses the server by several Hosts, so none is canonical: "*" is the explicit opt-in.
+			BUILDHOST_PRIMARY_DOMAIN="*"; export BUILDHOST_PRIMARY_DOMAIN
 			TOKEN="$($RUN bootstrap --name e2e | tail -n1)"
 			test -n "$TOKEN" || { echo "no token from bootstrap" >&2; exit 1; }
 			# setsid: the server leads its own process group, so teardown takes
@@ -40,8 +42,6 @@ shared:
 			setsid $RUN serve > "$WORK/server.log" 2>&1 &
 			echo "$!" > "$WORK/server.pid"
 			started=""
-			# A hook gets 30s in total, so a one-second poll spends the whole
-			# budget waiting and reports a timeout instead of the server log.
 			for _ in $(seq 50); do
 				if curl -fsS "$BASE/healthz" >/dev/null 2>&1; then started=yes; break; fi
 				sleep 0.2

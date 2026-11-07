@@ -1,3 +1,5 @@
+# A generate directive spelling `go run` builds an APE the runner cannot exec.
+
 name: CI
 
 on:
@@ -32,42 +34,60 @@ jobs:
           if ! printf '%s\n' ':APE:M::\x4d\x5a\x71\x46\x70\x44\x3d\x27::/bin/sh:' | sudo tee "$dir/register" > /dev/null 2>&1; then
             echo "::warning::APE binfmt handler not registered; a bare exec of an APE still fails here"
           fi
-      # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
-      - name: Repair the published go-toolchain
-        id: gt
+      # The published go-toolchain carries buildhost's release stamp after its embedded standard library's trailer. The go command reads that library from the end of the file, so the pipeline cannot run as the go command. Until a release carries the stamp ahead of the trailer, take the stamp out of the last bytes here. The dl endpoint is the same one buildhost-download fetches. A stalled transfer is tried again every 5s until the job timeout, so a server outage does not fail the pipeline.
+      - name: Take a go-toolchain the generators can run
+        id: gotoolchain
         uses: wow-look-at-my/actions@typescript#latest
         with:
           script: |
-            const r = await fetch("https://dl.pazer.build/go-toolchain?os=linux&arch=amd64");
-            if (!r.ok) throw new Error(`download: HTTP ${r.status}`);
-            const buf = Buffer.from(await r.arrayBuffer());
-            const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
-            let out = buf;
-            if (buf.subarray(buf.length - 16).equals(magic)) {
-              const start = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
-              const head = buf.subarray(0, start);
-              const rec = head.subarray(head.length - 64);
-              if (rec.subarray(0, 8).toString("ascii") === "GOSTDEMB") {
-                out = Buffer.concat([head.subarray(0, head.length - 64), buf.subarray(start), rec]);
-                core.info("moved the release stamp before the GOSTDEMB record");
+            const dl = require(${{ toJSON(format('{0}/.github/actions/lib/download.ts', github.workspace)) }}) as typeof import(${{ toJSON(format('{0}/.github/actions/lib/download', github.workspace)) }});
+            const url = "https://dl.pazer.build/go-toolchain?os=linux&arch=amd64";
+            let buf: Buffer | undefined;
+            for (let attempt = 1; !buf; attempt++) {
+              try {
+                buf = await dl.fetchBody(url, {});
+              } catch (err) {
+                if (err instanceof dl.HTTPError && err.status < 500) throw err;
+                core.warning(`downloading go-toolchain failed (attempt ${attempt}), trying again in 5s: ${err instanceof Error ? err.message : String(err)}`);
+                await new Promise((r) => setTimeout(r, 5000));
               }
             }
-            const file = path.join(env.RUNNER_TEMP!, "gt", "go-toolchain");
+            const magic = Buffer.from("BUILDHOST-STAMP1", "ascii");
+            if (buf.length >= 84 && buf.subarray(buf.length - 16).equals(magic)) {
+              const stamp = buf.length - 20 - buf.readUInt32BE(buf.length - 20);
+              const record = buf.subarray(stamp - 64, stamp);
+              if (record.subarray(0, 8).toString("ascii") === "GOSTDEMB") {
+                buf = Buffer.concat([buf.subarray(0, stamp - 64), buf.subarray(stamp), record]);
+                core.info("moved the release stamp ahead of the embedded standard library's trailer");
+              }
+            }
+            const file = path.join(env.RUNNER_TEMP!, "go-toolchain-repaired", "go-toolchain");
             fs.mkdirSync(path.dirname(file), { recursive: true });
-            fs.writeFileSync(file, out, { mode: 0o755 });
-            core.setOutput("path", file);
-      - uses: actions/checkout@v4
+            fs.writeFileSync(file, buf, { mode: 0o755 });
+            core.setOutput("binary", file);
+      # The pipeline's publish step names buildhost's publish action at a remote ref. GitHub refuses that action at master as an expression over its 21000-character limit, so the step fails to load for every repo. This branch's tree holds the repair, and a path ref resolves against this workspace, so the pipeline publishes through the action this branch carries.
+      - name: Check out the pipeline
+        uses: actions/checkout@v4
         with:
           repository: wow-look-at-my/go-toolchain
-          ref: claude/proof-324
-          path: .proof-go-toolchain
-      - run: echo .proof-go-toolchain/ >> .git/info/exclude
-      - uses: ./.proof-go-toolchain
+          ref: master
+          path: .go-toolchain
+      - name: Point the pipeline's publish at this tree's action
+        uses: wow-look-at-my/actions@typescript#latest
+        with:
+          script: |
+            const file = path.join(env.GITHUB_WORKSPACE!, ".go-toolchain", "action.yml");
+            const before = fs.readFileSync(file, "utf8");
+            const after = before.replaceAll(/wow-look-at-my\/buildhost\/\.github\/actions\/buildhost-publish@[\w.\/-]+/g, "./.github/actions/buildhost-publish");
+            if (after === before) throw new Error(`${file} names no remote buildhost-publish ref, so this step no longer retargets the publish`);
+            fs.writeFileSync(file, after);
+            fs.appendFileSync(path.join(env.GITHUB_WORKSPACE!, ".git", "info", "exclude"), ".go-toolchain/\n");
+      # No fetch-cacerts step: the CA bundle is a generate directive The org module proxy is gone, so modules come direct with sumdb off. go-toolchain publishes through this repo's publish action, so a release that action broke must not block its repair.
+      - uses: ./.go-toolchain
         env:
           GOPROXY: direct
         with:
-          binary: ${{ steps.gt.outputs.path }}
-          generate: 3ed2a7fd952f
+          binary: ${{ steps.gotoolchain.outputs.binary }}
           timeout: '25'
           allow-source-build: 'true'
       # The step above just ran every generate directive, which is what makes
@@ -101,6 +121,7 @@ jobs:
     if: github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: read
       pull-requests: write
     steps:
@@ -152,6 +173,11 @@ jobs:
         with:
           ref: ${{ steps.base.outputs.sha }}
           path: base
+      # A base that predates the pin script still carries the v0.0.0 org placeholders. This job restores no pull-request source tree, so check this pull request's tree out beside the base to take the script from.
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          path: pr
       # Base may post-date the CA-bundle change and embed it; fetch before building it.
       - if: steps.cache.outputs.cache-hit != 'true'
         run: |
@@ -162,11 +188,23 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: base/go.mod
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: wow-look-at-my/actions@secret-server#latest
       # The admin dashboard's JS is a generate directive too (internal/admin),
       - if: steps.cache.outputs.cache-hit != 'true'
         working-directory: base
         run: |
-          if [ -x scripts/resolve-org-deps.sh ]; then ./scripts/resolve-org-deps.sh; fi
+          pin=""
+          if [ -x .github/scripts/pin-org-deps.sh ]; then
+            pin=.github/scripts/pin-org-deps.sh
+          elif [ -x ../pr/.github/scripts/pin-org-deps.sh ]; then
+            # The base tree predates this script, so resolve its placeholders with this pull request's copy.
+            pin=../pr/.github/scripts/pin-org-deps.sh
+          fi
+          if [ -n "$pin" ]; then
+            git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+            "$pin"
+          fi
           go generate ./internal/api
           if [ -x scripts/build-admin-frontend.sh ]; then ./scripts/build-admin-frontend.sh; fi
           if [ -d internal/repackage/shellgen ]; then go generate ./internal/repackage; fi
@@ -276,6 +314,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the strip fixture
         run: go build -o "${{ runner.temp }}/strip-fixture" ./test/e2e/testdata/netcheck
       - env:
@@ -301,6 +345,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build the marker entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/marker" ./test/e2e/testdata/marker
       # The OCI endpoint is host-routed: the first Host label must be "oci".
@@ -339,6 +389,8 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required. This e2e addresses the server as localhost AND as *.localhost service subdomains (brew.localhost, static.localhost). No single host is canonical: "*" is the explicit opt-in to serving every Host.
+      BUILDHOST_PRIMARY_DOMAIN: "*"
       # CI-speed hygiene only -- these do not alter whether the documented flow
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
@@ -348,19 +400,22 @@ jobs:
         with:
           project: dats
       - if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@2026.11.02.1
       - if: runner.os == 'Linux'
         name: Host prep for Homebrew's build sandbox (bubblewrap + user namespaces)
         run: |
+          sudo apt-get update
           sudo apt-get install -y bubblewrap
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # Stock Go cannot resolve the org v0.0.0 placeholder. Some are private, so the checksum database skips them.
-      - env:
-          GONOSUMDB: github.com/wow-look-at-my
-        run: ./scripts/resolve-org-deps.sh
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       # Natively, never the shipped APE: SQLite's file locking fails under the APE's macOS syscall layer, and the server dies on SQLITE_IOERR_LOCK.
       - run: go generate ./internal/repackage
       - run: go generate ./internal/api
@@ -402,8 +457,9 @@ jobs:
             arm64|aarch64) arch=arm64 ;;
             *) echo "unsupported arch"; exit 1 ;;
           esac
-          # Publish the REAL go-toolchain binary from the live registry.
-          curl -fsSL --compressed \
+          # Publish the REAL go-toolchain binary from the live registry. The same endpoint stalls now and then, so the transfer is kept from hanging forever.
+          curl -fsSL --compressed --retry 5 --retry-all-errors --retry-delay 2 \
+            --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
             "https://dl.pazer.build/go-toolchain?branch=v1&os=$os&arch=$arch" \
             -o "${{ runner.temp }}/go-toolchain"
           chmod +x "${{ runner.temp }}/go-toolchain"
@@ -546,6 +602,57 @@ jobs:
               > "${{ runner.temp }}/buildhost-release-versioned.toml"
             ./buildhost publish --manifest "${{ runner.temp }}/buildhost-release-versioned.toml"
           done
+      # dep-app declares dep-lib in depends, so brew install of dep-app must install dep-lib too.
+      - name: Publish dep-lib and dep-app (public, dep-app depends on dep-lib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          for spec in dep-lib: dep-app:dep-lib; do
+            name="${spec%%:*}"
+            ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name "$name" --versioning semver
+            mkdir -p "${{ runner.temp }}/$name"
+            printf '%s\n' '#!/bin/sh' "echo buildhost-homebrew-$name-ok" > "${{ runner.temp }}/$name/$name"
+            chmod +x "${{ runner.temp }}/$name/$name"
+            ./buildhost publish --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --project "$name" \
+              --version 1.0.0 --git-branch master --os "$os" --arch "$arch" \
+              --artifact "${{ runner.temp }}/$name/$name" --depends "${spec#*:}"
+          done
+      # brew-pubapp is public and declares the PRIVATE brew-secret in depends. homebrew-private.dats installs it through the authenticated tap.
+      - name: Publish brew-secret (private) and brew-pubapp (public, depends on brew-secret)
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Darwin) os=darwin ;;
+            Linux) os=linux ;;
+            *) echo "unsupported OS"; exit 1 ;;
+          esac
+          case "$(uname -m)" in
+            x86_64|amd64) arch=amd64 ;;
+            arm64|aarch64) arch=arm64 ;;
+            *) echo "unsupported arch"; exit 1 ;;
+          esac
+          ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name brew-secret --versioning semver --private
+          ./buildhost project create --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --name brew-pubapp --versioning semver
+          for spec in brew-secret: brew-pubapp:brew-secret; do
+            name="${spec%%:*}"
+            mkdir -p "${{ runner.temp }}/$name"
+            printf '%s\n' '#!/bin/sh' "echo buildhost-homebrew-$name-ok" > "${{ runner.temp }}/$name/$name"
+            chmod +x "${{ runner.temp }}/$name/$name"
+            ./buildhost publish --server "$BUILDHOST_BASE_URL" --token "$BUILDHOST_TOKEN" --project "$name" \
+              --version 1.0.0 --git-branch master --os "$os" --arch "$arch" \
+              --artifact "${{ runner.temp }}/$name/$name" --depends "${spec#*:}"
+          done
       # Hostile-name fixtures for the formula-codegen guarantees the e2e
       - name: Publish hostile-name fixtures (public)
         shell: bash
@@ -629,13 +736,19 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Install crane (zstd-capable OCI client)
         run: |
           go install github.com/google/go-containerregistry/cmd/crane@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: Build netcheck entrypoint (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/netcheck" ./test/e2e/testdata/netcheck
-      # The OCI endpoint is host-routed: the first Host label must be "oci".
+      # The OCI endpoint is host-routed: the earliest Host label must be "oci".
       - name: Map the OCI host to the local server
         run: echo "127.0.0.1 oci.buildhost.test" | sudo tee -a /etc/hosts
       # buildhost's layers are zstd.
@@ -704,6 +817,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # Stock Go cannot resolve the v0.0.0 placeholders go-toolchain keeps for org modules.
+      - uses: wow-look-at-my/actions@secret-server#latest
+      - name: Pin org modules for stock Go
+        run: |
+          git config --global url."https://x-access-token:${PRIVATE_ORG_REPO_READ}@github.com/wow-look-at-my/".insteadOf "https://github.com/wow-look-at-my/"
+          .github/scripts/pin-org-deps.sh
       - name: Build apt test package payload (static linux/amd64)
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "${{ runner.temp }}/buildhost-apt-e2e" ./test/e2e/testdata/netcheck
       # Untimed, so the suite's 30s setup hook pays for neither.
@@ -745,6 +864,8 @@ jobs:
     env:
       BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
       BUILDHOST_BASE_URL: http://localhost:18080
+      # Required; "*" = serve every Host (localhost plus the static.localhost subdomain the verify step downloads from).
+      BUILDHOST_PRIMARY_DOMAIN: "*"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/buildhost-download
@@ -900,6 +1021,201 @@ jobs:
             kill "$(cat "${{ runner.temp }}/buildhost.pid")" || true
           fi
 
+  # The archive runs on every host a consumer packs on. Windows' own tar crashed on trees that Linux packed fine.
+  handoff-archive:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # The archive is this PR's `buildhost archive`, not the published one.
+      BUILDHOST_CLI: ${{ github.workspace }}/build/buildhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - shell: bash
+        run: chmod +x build/buildhost
+      - id: dats
+        uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      # NT finds an executable by its extension. A posix host does not care.
+      - shell: bash
+        run: |
+          cp "${{ steps.dats.outputs.path }}" "${{ runner.temp }}/dats.exe"
+          chmod +x "${{ runner.temp }}/dats.exe"
+          "${{ runner.temp }}/dats.exe" --no-sandbox -v test test/dats/handoff-archive.dats
+
+  # The hand-off and cache composites against this PR's own server, with the job's real OIDC token as the run's identity.
+  handoff-action-e2e:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BUILDHOST_LISTEN_ADDR: 127.0.0.1:18080
+      BUILDHOST_BASE_URL: http://localhost:18080
+      BUILDHOST_PRIMARY_DOMAIN: "*"
+      BUILDHOST_CLI: ${{ github.workspace }}/build/buildhost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/buildhost-download
+        with:
+          project: dats
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build-build.broot
+          path: build/
+      - run: chmod +x build/buildhost
+      - name: Start local buildhost (1 MiB direct-upload limit)
+        shell: bash
+        env:
+          BUILDHOST_DATA_DIR: ${{ runner.temp }}/buildhost-data
+          BUILDHOST_DB_PATH: ${{ runner.temp }}/buildhost-data/buildhost.db
+          BUILDHOST_ADMIN_LISTEN_ADDR: ""
+          BUILDHOST_MAX_DIRECT_UPLOAD_SIZE: "1048576"
+          BUILDHOST_OIDC_ORGS: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          ./build/buildhost serve > "${{ runner.temp }}/buildhost.log" 2>&1 &
+          echo "$!" > "${{ runner.temp }}/buildhost.pid"
+          for _ in {1..60}; do
+            if curl -fsS "$BUILDHOST_BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "${{ runner.temp }}/buildhost.log"
+          exit 1
+      - name: Create the directory to hand off
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/sent/bin"
+          head -c 3158217 /dev/urandom > "${{ runner.temp }}/sent/bin/go"
+          chmod 0755 "${{ runner.temp }}/sent/bin/go"
+          ln -s ../bin/go "${{ runner.temp }}/sent/compile"
+          printf 'plain\n' > "${{ runner.temp }}/sent/notes.txt"
+      - name: Send
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: send
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/sent
+      - name: Receive
+        uses: ./.github/actions/buildhost-handoff
+        with:
+          mode: receive
+          server: http://localhost:18080
+          name: toolchain-e2e
+          path: ${{ runner.temp }}/received
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          RECEIVED: ${{ runner.temp }}/received
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/handoff.dats
+      # A cache entry restores to the paths it was saved from: one inside the workspace, one outside it.
+      - name: Lay out the paths to cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp -a "${{ runner.temp }}/sent" "${{ runner.temp }}/cached"
+          mkdir -p cached-in-workspace && printf 'workspace\n' > cached-in-workspace/note
+      - name: Save the cache
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+            never-created
+      - name: Save the same key again
+        uses: ./.github/actions/buildhost-cache-save
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Clear the cached paths
+        shell: bash
+        run: rm -rf "${{ runner.temp }}/cached" cached-in-workspace
+      - name: Restore the exact key
+        id: restore-exact
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the exact restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-exact" && mv cached-in-workspace "${{ runner.temp }}/cache-exact-workspace"
+      - name: Restore by a restore key
+        id: restore-prefix
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          restore-keys: |
+            nothing-here-
+            cache-e2e-${{ github.run_id }}-
+          path: |
+            ${{ runner.temp }}/cached
+            cached-in-workspace
+      - name: Keep the prefix restore and clear the paths
+        shell: bash
+        run: mv "${{ runner.temp }}/cached" "${{ runner.temp }}/cache-prefix" && rm -rf cached-in-workspace
+      - name: Restore a key nothing holds
+        id: restore-miss
+        uses: ./.github/actions/buildhost-cache-restore
+        with:
+          server: http://localhost:18080
+          key: cache-e2e-absent-${{ github.run_id }}
+          path: ${{ runner.temp }}/cached
+      - env:
+          LOG: ${{ runner.temp }}/buildhost.log
+          SENT: ${{ runner.temp }}/sent
+          EXACT: ${{ runner.temp }}/cache-exact
+          EXACT_WORKSPACE: ${{ runner.temp }}/cache-exact-workspace
+          PREFIX: ${{ runner.temp }}/cache-prefix
+          MISS: ${{ runner.temp }}/cached
+          EXACT_HIT: ${{ steps.restore-exact.outputs.cache-hit }}
+          PREFIX_HIT: ${{ steps.restore-prefix.outputs.cache-hit }}
+          PREFIX_MATCHED: ${{ steps.restore-prefix.outputs.cache-matched-key }}
+          MISS_HIT: ${{ steps.restore-miss.outputs.cache-hit }}
+          SAVED_KEY: cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          BASE: http://localhost:18080
+        run: sh "${{ runner.temp }}/dats" --no-sandbox -v test test/dats/cache.dats
+      - name: Server log
+        if: always()
+        shell: bash
+        run: cat "${{ runner.temp }}/buildhost.log" || echo "buildhost log was not created"
+      - name: Stop local buildhost
+        if: always()
+        shell: bash
+        run: |
+          pid_file="${{ runner.temp }}/buildhost.pid"
+          if [ -f "$pid_file" ]; then
+            pid="$(cat "$pid_file")"
+            if kill -0 "$pid" 2>/dev/null; then
+              kill "$pid"
+            fi
+          fi
+
   publish-ghcr:
     needs: container-healthcheck
-    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@master
+    uses: wow-look-at-my/actions/.github/workflows/publish-ghcr.yml@lkgb

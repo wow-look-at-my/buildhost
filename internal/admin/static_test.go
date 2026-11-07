@@ -121,6 +121,20 @@ func TestAdminStaticScriptTagsResolve(t *testing.T) {
 	}
 }
 
+// static/demo.json puts the dashboard in demo mode. Only the preview site may
+// serve it: from the admin server it shows fixtures in place of real data.
+func TestAdminServerNeverServesDemoMarker(t *testing.T) {
+	t.Serial()
+	_, err := content.ReadFile("static/demo.json")
+	require.Error(t, err, "static/demo.json is embedded: the live dashboard would show demo data")
+
+	srv, _ := newTestServer(t)
+	w := serve(srv, "GET", "/demo.json", nil)
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Header().Get("Content-Type"), "text/html", "/demo.json must fall through to the SPA")
+	require.NotContains(t, w.Body.String(), `"demo"`)
+}
+
 // A site LINK the dashboard hands a user must be the read grammar ("@branch"),
 func TestAdminStaticSiteLinksUseRefSigil(t *testing.T) {
 	t.Serial()

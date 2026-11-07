@@ -10,7 +10,9 @@ brew install pazer/build/go-toolchain
 
 Do not install a formula with a naked remote URL, such as `brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew reads that as a formula name or a tap name. It does not clone it as a formula URL.
 
-On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
+On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
+
+macOS needs neither.
 
 A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`.
 
@@ -24,21 +26,22 @@ A private project never appears in the public tap. Tap the **authenticated tap**
 
 `brew tap --custom-remote` taps it fresh, or repoints a public tap you already added. The authenticated tap's history shares no commits with the public tap's, so `brew update-reset` then moves the checkout onto it. Formulae you already installed stay installed. Do not run `brew untap --force pazer/build`: it uninstalls every formula installed from the tap.
 
-Git transmits a credential only after a 401 challenge. The token therefore goes in the tap URL, as the HTTP Basic password. The username is ignored, and `x` is the convention.
+The token goes in your git config, as an HTTP Basic `Authorization` header scoped to the authenticated tap's URL. The username is ignored, and `x` is the convention. Do not put the token in the tap URL. git then reports a redirect on every fetch. Homebrew answers that by rewriting the tap's remote without the token.
 
 An artifact download authenticates separately, through `HOMEBREW_BUILDHOST_TOKEN`. A private formula reads that at install time. The token is never written into the tap.
 
 The example below uses a private project named `myrepo/myapp`, the only project under `myrepo`. Under the rule above it installs as `myrepo`. The installed command keeps the binary's own name, `myapp`:
 
 ```bash
-brew trust "https://x:$TOKEN@brew.pazer.build/private/tap.git"
-brew tap --custom-remote pazer/build "https://x:$TOKEN@brew.pazer.build/private/tap.git"
+brew trust "https://brew.pazer.build/private/tap.git"
+git config --global "http.https://brew.pazer.build/private/.extraHeader" "Authorization: Basic $(printf 'x:%s' "$TOKEN" | base64 | tr -d '\n')"
+brew tap --custom-remote pazer/build "https://brew.pazer.build/private/tap.git"
 brew update-reset "$(brew --repository pazer/build)"
 export HOMEBREW_BUILDHOST_TOKEN="$TOKEN"
 brew install pazer/build/myrepo
 ```
 
-`brew update` refreshes the tap with the credential stored in the tap's git remote. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
+`brew update` refreshes the tap with the header in your git config. The `?token=` query parameter does not work with `brew tap`. git appends its own path segments after the query string, such as `/info/refs`. The URL then stops resolving as a git repository.
 
 ## Specific versions
 
@@ -51,6 +54,10 @@ brew version-install pazer/build/go-toolchain@1.0.0
 Homebrew copies that release's formula out of the tap history into a personal `<user>/versions` tap, as `<formula>@<version>`, and installs it from there. A pinned version is keg-only, so it installs beside the latest one without a link conflict. Run it from `$(brew --prefix go-toolchain@1.0.0)/bin/go-toolchain`, or `brew link --force` it after `brew unlink go-toolchain`. When the version asked for is the latest one, `brew version-install` installs the ordinary formula instead.
 
 A private project works the same way through the authenticated tap, with `HOMEBREW_BUILDHOST_TOKEN` set as above. A release appears in the history once buildhost hashed its download. A background worker does that at start and when a tap refresh finds a release it lacks.
+
+## Dependencies on other buildhost projects (depends)
+
+A project that declares `depends` (see the APT page) gets a `depends_on "pazer/build/<formula>"` line in its formula for each dependency. `brew install pazer/build/api-cli` then installs `pazer/build/ascii-timeline` first. The name carries the tap, because brew resolves a bare name against homebrew-core first. So the formulas assume the tap name `pazer/build` that every install command here uses. A private dependency needs the authenticated tap and `HOMEBREW_BUILDHOST_TOKEN`. The public tap does not list it, so brew stops with "No available formula".
 
 ## Background services (create_service)
 

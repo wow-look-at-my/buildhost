@@ -1,15 +1,16 @@
 // Behavior tests for .github/actions/lib/upload.ts.
+//
+// A mistake here fails publishing for every repo in the org that ships a binary larger than the advertised direct limit.
+//
+// The server here speaks the real session protocol from docs/uploads.md, so the assertions are about what buildhost receives.
 
-const assert = require('node:assert');
-const http = require('node:http') as typeof import('node:http');
-const fs = require('node:fs') as typeof import('node:fs');
-const os = require('node:os') as typeof import('node:os');
-const pathMod = require('node:path') as typeof import('node:path');
-const crypto = require('node:crypto') as typeof import('node:crypto');
-
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib/upload`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
-const { putFile, directLimit, DefaultDirectLimit } = require(`${lib}.ts`);
+import assert from 'node:assert';
+import * as http from 'node:http';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as pathMod from 'node:path';
+import * as crypto from 'node:crypto';
+import { putFile, directLimit, DefaultDirectLimit } from '../../.github/actions/lib/upload.ts';
 
 type Req = { method: string; url: string; headers: Record<string, string>; body: Buffer };
 
@@ -20,10 +21,12 @@ interface ServerOptions {
 	truncateChunk?: { nth: number; keep: number };
 	/** Status the finalize request answers with. */
 	finalizeStatus?: number;
+	/** Finalizes that answer busy before another finalize consumes the session. */
+	busyFinalizes?: number;
 }
 
 interface Harness {
-	send: (method: string, urlPath: string, body?: Buffer | null, headers?: Record<string, string>) => Promise<{ status: number; text: string }>;
+	send: (method: string, urlPath: string, body?: Buffer | Blob | null, headers?: Record<string, string>) => Promise<{ status: number; text: string }>;
 	requests: Req[];
 	spools: Map<string, Buffer>;
 	finalized: Req | null;
@@ -36,6 +39,7 @@ async function start(opts: ServerOptions): Promise<Harness> {
 	let finalized: Req | null = null;
 	let patches = 0;
 	let nextID = 0;
+	let busy = 0;
 
 	const server = http.createServer((req, res) => {
 		const chunks: Buffer[] = [];
@@ -78,6 +82,13 @@ async function start(opts: ServerOptions): Promise<Harness> {
 				return;
 			}
 			// Anything else is the artifact endpoint the publish would call.
+			const sid = new URL(url, 'http://x').searchParams.get('upload_session');
+			if (opts.busyFinalizes !== undefined && sid) {
+				if (busy < opts.busyFinalizes) { busy++; json(409, { error: 'upload session busy' }); return; }
+				spools.delete(sid);
+				json(404, { error: 'upload session not found' });
+				return;
+			}
 			finalized = entry;
 			res.writeHead(opts.finalizeStatus ?? 201, { 'Content-Type': 'application/json' });
 			res.end(JSON.stringify({ ok: true }));
@@ -88,7 +99,7 @@ async function start(opts: ServerOptions): Promise<Harness> {
 	const port = (server.address() as { port: number }).port;
 	const base = `http://127.0.0.1:${port}`;
 
-	const send = async (method: string, urlPath: string, body?: Buffer | null, headers?: Record<string, string>) => {
+	const send = async (method: string, urlPath: string, body?: Buffer | Blob | null, headers?: Record<string, string>) => {
 		const h: Record<string, string> = { Authorization: 'Bearer t', ...(headers ?? {}) };
 		if (body) h['Content-Type'] = 'application/octet-stream';
 		const resp = await fetch(`${base}${urlPath}`, { method, headers: h, body: body ?? undefined });
@@ -195,6 +206,21 @@ async function main(): Promise<void> {
 		const r = await putFile(h.send, core, { urlPath: '/api/v1/a', body: f.body, chunkSize: 1024 });
 		assert.strictEqual(r.status, 409, 'the endpoint status is returned, not thrown');
 		assert.strictEqual(h.spools.size, 0, 'the spool is aborted rather than left to the sweeper');
+		await h.close();
+	}
+
+	// --- a finalize that finds another running waits for it ------------
+
+	{
+		const h = await start({ maxDirect: 1000, busyFinalizes: 1 });
+		const f = writeFixture('busy_linux_amd64', 3000);
+		const r = await putFile(h.send, core, { urlPath: '/api/v1/a?kind=binary', body: f.body, chunkSize: 1024 });
+		assert.strictEqual(r.status, 201, 'the busy finalize ends in the stored artifact');
+		const q = new URL(h.finalized!.url, 'http://x').searchParams;
+		assert.strictEqual(q.get('upload_session'), null, 'the last request is a hash reference');
+		assert.strictEqual(q.get('upload_sha256'), f.sum);
+		assert.strictEqual(q.get('kind'), 'binary', 'the original query survives');
+		assert.ok(warnings.some((w) => w.includes('busy with another finalize')), 'the wait is named');
 		await h.close();
 	}
 
