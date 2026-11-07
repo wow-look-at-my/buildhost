@@ -164,7 +164,7 @@ All three sit on top of the GC foundation and honor the Section multiple pins. T
 Keep the N most-recent published releases per project. Evict the older ones. The pins still apply: latest per branch, tagged, and recent.
 
 - **Pros:** predictable, easy to explain, and registry-standard, as npm dist-tags and ghcr retention are. It uses only a signal we already have, `version_num`. It bounds per-project growth directly.
-- **Cons:** it does not target a disk budget directly, so a few huge projects can still dominate. N is a blunt instrument across different projects.
+- **Cons:** it does not target a disk budget directly, so a few large projects can still dominate. N is a blunt instrument across different projects.
 - **Config:** `BUILDHOST_RETENTION_KEEP_N` (global default), optional per-project override column.
 
 ### Option B -- Age-based TTL
@@ -241,7 +241,9 @@ Surfaces, matching existing patterns:
 
 `oci_blob_links` is **project-scoped, not release-scoped**. A pushed docker blob or manifest attaches to the project. It is shared across pushes and tags (`internal/oci/*.go`).
 
-To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained. A tagged release is pinned regardless.
+To evict a `kind=docker` release is therefore not a simple row cascade. You must drop the tag and the manifest first. You must then GC each blob that no remaining tag or manifest in that project reaches. This deserves its own design pass. It is out of scope for the initial keep-N work. Until then a docker image is retained.
+
+A tagged release is pinned regardless.
 
 ---
 

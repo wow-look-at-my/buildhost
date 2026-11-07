@@ -1,3 +1,5 @@
+// versioning.go holds the versioning code.
+
 package admin
 
 import (

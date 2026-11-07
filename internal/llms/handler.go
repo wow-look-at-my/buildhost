@@ -1,3 +1,5 @@
+// handler.go holds the handler code.
+
 package llms
 
 import (
@@ -46,32 +48,22 @@ func render(baseURL string) []byte {
 	out = strings.ReplaceAll(out, "__OCI_HOST__", "oci."+host)
 	// The netrc machine line takes a bare host, not a URL.
 	out = strings.ReplaceAll(out, "__GOPROXY_HOST__", "goproxy."+host)
-	// The authenticated Homebrew tap URL carries the token as the HTTP Basic
-	out = strings.ReplaceAll(out, "__BREW_TOKEN_URL__", scheme+"x:$TOKEN@brew."+host)
 	out = strings.ReplaceAll(out, "__SITE_SECTION__", siteSection(scheme))
 
 	return []byte(out)
 }
 
 // siteSection documents the {project}.<site-domain> serving scheme when a
-// site domain is configured, and renders nothing otherwise -- the served
-// guide only describes endpoints this deployment has. The section's URLs live
-// on the dedicated site domain, never on a service subdomain of the apex, so
-// the per-subdomain rendering guards are unaffected.
+// site domain is configured, and renders nothing otherwise. The served guide
+// only describes endpoints this deployment has. The section's URLs live on
+// the dedicated site domain, never on a service subdomain of the apex, so the
+// per-subdomain rendering guards are unaffected.
 func siteSection(scheme string) string {
 	sd := auth.SiteDomain()
 	if sd == "" {
 		return ""
 	}
-	return `
-## Project site subdomains
-
-This deployment also serves each project's static site on a dedicated domain,
-one subdomain per project (only for project names that are a valid single DNS
-label: [a-z0-9-], max 63 chars, no leading/trailing hyphen):
-
-` + "```" + `
-` + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
+	return siteSectionMd + scheme + `myapp.` + sd + `/                # default branch (same branch "latest" tracks)
 ` + scheme + `myapp.` + sd + `/@pr-7/          # any other branch, behind the @ sigil
 ` + scheme + `myapp.` + sd + `/@0f1e2d3/       # a specific commit (7+ hex, or the full sha)
 ` + scheme + `myapp.` + sd + `/@claude/foo/    # slash-named branches resolve by longest match
@@ -115,3 +107,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Write(render(apexBaseURL(r)))
 }
+
+//go:embed site-section.md
+var siteSectionMd string

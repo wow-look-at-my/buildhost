@@ -54,7 +54,9 @@ The collapse is also skipped when the bare URL addresses a DIFFERENT project. `a
 
 Each older form keeps working **only on the scheme it came from**. That asymmetry is easy to misread. `/branch/{branch}/` is classic-scheme only, and 302s to the canonical URL. `~{branch}` is subdomain-scheme only, and 301s to `@`.
 
-`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too. The top-level CLAUDE.md sent a reader hunting a routing bug that does not exist.
+`~` has never been a sigil on the classic scheme. `/{project}/~{branch}/<file>` is therefore an ordinary path, which names a literal file `~{branch}/<file>` under the default branch. It answers 404, or 401 on a private project whose root branch is not public. It never answers a redirect. `TestLegacySigil_*` in `internal/sites` pins that. The top-level CLAUDE.md once claimed `~` redirected on the classic scheme too.
+
+The top-level CLAUDE.md sent a reader hunting a routing bug that does not exist.
 
 A sigil beats a path segment for one reason. `branch` is an ordinary segment. The old form therefore failed to address a site with a top-level `branch/` directory at all. Every URL in such a site also carried a segment that reads like part of the site.
 
@@ -90,7 +92,7 @@ That is the useful half of immutability. The URL serves that build or nothing, a
 
 ### Apex path (`/{project}` and `/{project}/<file>`)
 
-The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish. It is often `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
+The **bare project root**, `/{project}/`, serves `index.html` straight from the project's `default_branch`. buildhost learns that branch from GitHub on publish. It is frequently `main`. The seed default is `master`, which is the same branch the apex download `latest` tracks. A project's root URL therefore resolves to its canonical site, without the caller's knowledge of which branch it lives on, and with no redirect hop.
 
 `/{project}` without the slash `301`s to `/{project}/`. A relative link in `index.html` then resolves under the project, rather than under the host root.
 
@@ -134,7 +136,9 @@ Some things are reserved on the subdomain scheme only. They are the `@` and `~` 
 
 Within the family, the literal `/__sso` outranks `{path...}`.
 
-The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `/__sso` therefore answers there. `/healthz` answers 404 on every site-domain host, because the CDN caches those hosts. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex. See the unknown-domain security note.
+The BARE site apex carries no project label. It matches no host-bearing route, and falls through to the host-agnostic routes. `/__sso` therefore answers there. `/healthz` answers 404 on every site-domain host, because the CDN caches those hosts. The web and API surface answers there too, but ONLY while `BUILDHOST_PRIMARY_DOMAIN` is unset. With that value set, those routes are primary-scoped and answer 404 off-apex.
+
+See the unknown-domain security note.
 
 A name with `/`, `.` or `_`, or a name many characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
 
@@ -155,7 +159,9 @@ Checks guard it. Both were verified to fail before the fix.
 
 ## Public sites under private projects
 
-A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`. As a result, the centralized `requireProject` opens just that branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo. The `buildhost-publish-site` action sends the header when its `public` input is `true`.
+A site uploaded with the header `X-Public-Site: true` is stored with `is_public=1`. It is served **without a token, even under a private project**. The sites read route implements `auth.PublicReadAuthorizer`. As a result, the centralized `requireProject` opens just that branch. The project's releases and its other branches stay gated. This is used for a PR preview of a private repo.
+
+The `buildhost-publish-site` action sends the header when its `public` input is `true`.
 
 ## Storage and limits
 

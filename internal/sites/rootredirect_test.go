@@ -25,7 +25,7 @@ func rootServed(t *testing.T, h *Handler, project *db.Project) string {
 }
 
 // A project whose default_branch points at a branch with no published site
-// (e.g. the seed "master" while sites were only ever deployed to "main".
+// (e.g. the seed. "master" while sites were only ever deployed to "main".
 func TestRootServe_FallsBackToExistingSite(t *testing.T) {
 	t.Serial()
 	h, d, _ := setupTest(t)

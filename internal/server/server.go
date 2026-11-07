@@ -1,3 +1,5 @@
+// healthResponse is the JSON body of GET /healthz.
+
 package server
 
 import (

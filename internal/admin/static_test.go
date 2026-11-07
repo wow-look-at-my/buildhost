@@ -25,13 +25,14 @@ func readBundle(t *testing.T) string {
 // The dashboard wires its buttons with inline onclick="App.x(...)" markup,
 // and the bundle only exposes App.x for names the TypeScript EXPORTS. A
 // handler that is referenced but not exported is a silently dead button -- no
-// build error, nothing red in CI, a control that does nothing when clicked.
+// build error, nothing red in CI, a control. That control does nothing when
+// clicked.
 //
 // This is also the check that would have caught the drift this file was
-// rewritten for: the committed bundle had diverged from its TypeScript
+// rewritten for. The committed bundle had diverged from its TypeScript
 // source, and the assertions (on internal function names) passed against the
-// stale artifact while the real source could not have produced a working
-// dashboard.
+// stale artifact. This happens while the real source could not have produced
+// a working dashboard.
 func TestAdminStaticInlineHandlersAreExported(t *testing.T) {
 	t.Serial()
 	body := readBundle(t)
@@ -119,6 +120,20 @@ func TestAdminStaticScriptTagsResolve(t *testing.T) {
 		_, err := content.ReadFile("static/" + m[1])
 		require.NoErrorf(t, err, "index.html loads %q but it is not embedded", m[1])
 	}
+}
+
+// static/demo.json puts the dashboard in demo mode. Only the preview site may
+// serve it: from the admin server it shows fixtures in place of real data.
+func TestAdminServerNeverServesDemoMarker(t *testing.T) {
+	t.Serial()
+	_, err := content.ReadFile("static/demo.json")
+	require.Error(t, err, "static/demo.json is embedded: the live dashboard would show demo data")
+
+	srv, _ := newTestServer(t)
+	w := serve(srv, "GET", "/demo.json", nil)
+	require.Equal(t, 200, w.Code)
+	require.Contains(t, w.Header().Get("Content-Type"), "text/html", "/demo.json must fall through to the SPA")
+	require.NotContains(t, w.Body.String(), `"demo"`)
 }
 
 // A site LINK the dashboard hands a user must be the read grammar ("@branch"),

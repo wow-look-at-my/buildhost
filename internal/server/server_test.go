@@ -321,8 +321,8 @@ func TestHealthz_HostGate(t *testing.T) {
 		require.Equal(t, "no-store", resp.Header.Get("Cache-Control"), "host %s", host)
 	}
 
-	// Some service hosts own every path, so their own handler answers instead
-	// of the gate. Each one must still return no health body.
+	// Some service hosts own every path, so their own handler answers instead of
+	// the gate. Each must still return no health body.
 	for _, label := range []string{"static", "dl", "oci", "docker", "apt", "npm", "brew", "git", "goproxy", "sites"} {
 		for _, host := range []string{label + "." + primaryTestDomain, label + ".pazer.build:443"} {
 			resp, body := siteGet(t, env, host, "/healthz")

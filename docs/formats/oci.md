@@ -30,7 +30,7 @@ The **base layer** is the minimal rootfs, the CA bundle and the shell, joined by
 
 The shell is one static busybox at `/bin/busybox`, plus a symlink per applet. `shellgen` fetches it from a pinned `busybox:musl` image and checks the digest against that pin. Then `//go:embed` bakes it into the binary. That happens at BUILD time, exactly as `fetch-cacerts.sh` bakes in the CA bundle.
 
-**Nothing fetches a shell at pull time.**. That put Docker Hub in the path of every image this server serves. A deployment that cannot reach it then answered every synthesis with a failure, and the platform needing that shell dropped out of the index. An architecture with no shell baked in is refused by name, rather than served without one.
+**Nothing fetches a shell at pull time.**. That put Docker Hub in the path of every image this server serves. A deployment that cannot reach it then answered every synthesis with a failure, and the platform needing that shell dropped out of the index. By name, an architecture with no shell baked in is refused, rather than served without one.
 
 The **binary layer** puts the binary at `/usr/local/lib/<project>/<project>`. A `#!/bin/sh` launcher sits at `/<project>` and at `/usr/local/bin/<project>`, for the bare name on PATH. The entrypoint stays `/<project>`, which is what every earlier synthesized image carried.
 
@@ -42,13 +42,17 @@ The kernel cannot exec an Actually Portable Executable. The file's header is a s
 
 The APE's own trampoline handles this at run time. It copies itself somewhere writable and executable, and overwrites the prologue with a real ELF header. It stages that copy under a **hardcoded** `/tmp/.ape-run-1-$(id -u)` path, and reads no `TMPDIR`. A container's `/tmp` is usually a noexec tmpfs. The copy is written and the exec dies, against a path the operator never chose and never sees again. Exporting a different `TMPDIR` from a launcher does nothing.
 
-`apeAsELF` therefore does that overwrite once, at synthesis. It reads the ELF header for the artifact's architecture out of the trampoline's own `printf` call, keyed on `e_machine`. It writes that header over the prologue. The length does not change. The image carries a plain ELF the kernel loads directly. Nothing is staged at run time, and `/tmp` never enters the picture. A prologue carrying no header for that architecture fails the synthesis, rather than shipping an image that cannot start.
+`apeAsELF` therefore does that overwrite once, at synthesis. It reads the ELF header for the artifact's architecture out of the trampoline's own `printf` call, keyed on `e_machine`. It writes that header over the prologue. The length does not change. The image carries a plain ELF the kernel loads directly. Nothing is staged at run time, and `/tmp` never enters the picture.
+
+A prologue carrying no header for that architecture fails the synthesis, rather than shipping an image that cannot start.
 
 ### Linux only
 
 `OCI.Applicable` gates the format to `os=linux`. An APE covers several platforms from one artifact row. The image around it is still a linux rootfs with a linux shell. Stamping that `os: darwin` or `os: windows` advertises a platform nothing can pull and run. Those slots are absent from the index, rather than broken entries in it.
 
-. A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the image. An entrypoint that names an APE exits 126 on every start. The container is never replaced. Its stale config is then cloned onto every later image. The deployment stays on the version it already runs. A shebang script is execable, so every spelling reaches the binary and no such wedge can start.
+. A rolling updater creates the replacement container from the config of the container it replaces. That config carries the entrypoint of the image. An entrypoint that names an APE exits 126 on every start. The container is never replaced. Its stale config is then cloned onto every later image.
+
+The deployment stays on the version it already runs. A shebang script is execable, so every spelling reaches the binary and no such wedge can start.
 
 `test/dats/synthesized-ape-image.dats` starts a real synthesized APE image. It also starts one under each entrypoint spelling an older container can carry.
 

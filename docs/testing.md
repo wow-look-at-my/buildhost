@@ -68,7 +68,9 @@ The suite refuses to run when an APE binfmt handler is registered. The kernel th
 
 ## The preview dashboard's links
 
-`test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
+`test/dats/admin-demo-links.dats` is a step in `sites-cors-e2e`. It serves the built `internal/admin/static` under a path prefix. That directory ships `demo.json`, which is what puts the SPA in demo mode. It then walks every `#/` link the SPA renders, breadth-first, from the dashboard outward. A page must draw a heading that is not the error page.
+
+The same suite serves the SPA the way the admin server does: at the root, without `demo.json`, with an API that answers 502. Every page must then draw the error page and no fixture value. The admin server does not embed `demo.json`, and `TestAdminServerNeverServesDemoMarker` holds that. A failed request on the live dashboard once switched the whole tab to the demo dataset.
 
 It exists because the demo dataset linked to a page it had no fixture for. The missing fixture resolved to `{}`. The renderer threw on that value, and the previous page stayed on screen. The link therefore did nothing. `apiFetch` now throws on an unknown demo path, and the router paints the failure. The same defect is therefore loud instead of invisible.
 
@@ -133,4 +135,4 @@ Regenerate with `go-toolchain && ./build/buildhost routes > docs/routes.golden`,
 
 It exists because this repo has no central router file. Every backend self-registers from its own `init()`. Before the golden, an added endpoint therefore left nothing route-shaped in Files Changed for a reviewer to look at. The golden turns a new route into an ordinary one-line diff. It also makes a duplicated or unintended route impossible to land unnoticed.
 
-`internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot, so a route registered there is invisible to `buildhost routes`, to the golden, and to the route-diff check. Its `want` list covers every backend including `/api/v1`.
+`internal/routescheck/routes_test.go` guards the mechanism the golden depends on: routes must register in `init()`, not inside an `auth.OnReady()` callback. OnReady fires only from `auth.Init()` at server boot, so a route registered there is invisible to `buildhost routes`. Those fires are to the golden, and to the route-diff check. Its `want` list covers every backend including `/api/v1`.

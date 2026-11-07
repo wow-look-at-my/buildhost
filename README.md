@@ -30,7 +30,7 @@ buildhost serves a public, read-only browse UI on the main domain, and it uses n
 - `GET /projects/{project}` -- a project's metadata, its published releases, its deployed static sites, and copy-paste install and download commands
 - `GET /projects/{project}/releases/{version}` -- a release's artifacts, with a download link per format. The formats are `raw`, `tar.gz`, `tar.xz`, `tar.zst` and `zip`. An image release gets a `docker pull` instead.
 
-A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, identical to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
+A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, same to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
 
 A download link points at the `dl` subdomain. The single stylesheet is served from `/_ui/style.css`. No other asset is loaded. The authenticated admin dashboard remains a separate app on its own port. See [Container image](#container-image).
 
@@ -202,7 +202,9 @@ GET /dl/myapp/branch/main/linux/amd64
 
 `latest`, with no branch, resolves to the newest published release on the project's **default branch**. That branch is `master` by default. buildhost detects each repo's real default branch automatically. On a GitHub Actions OIDC publish it reads the `owner/repo` from the token, and asks GitHub for that repo's default branch. A repo that releases off another branch, such as `v1`, therefore gets a correct `latest` with nothing sent in the publish. A push to a feature branch never hijacks `latest`. When the default branch has no published release yet, `latest` is not available.
 
-buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP. It cannot read a private repo.
+buildhost authenticates these lookups as a **GitHub App**. Set `BUILDHOST_GITHUB_APP_ID` and `BUILDHOST_GITHUB_APP_PRIVATE_KEY`, and the key takes the PEM contents or a file path. That path is recommended, because it mints a short-lived installation token, needs `metadata: read` only, and carries a high rate limit. A static `BUILDHOST_GITHUB_TOKEN` PAT works as a fallback. Without either, a lookup is anonymous. GitHub throttles an anonymous lookup to 60 per hour per IP.
+
+It cannot read a private repo.
 
 ## Static sites
 
@@ -244,8 +246,24 @@ Set `BUILDHOST_SITE_DOMAIN` (e.g. `pazer.site`) to also serve each project's sit
 - A slash-named branch, such as `claude/foo`, resolves by longest match. An `@<default-branch>` URL 302s to the canonical bare form. The `~` sigil this scheme launched with still works, and it 301s to the `@` form.
 - Only a project name that is a single DNS label serves here. That means `[a-z0-9-]`, a bounded number of characters, with no leading or trailing `-`. Every other name stays on `sites.<apex>/...`.
 - Reserved on this scheme: a leading `~` path segment and the literal `/__sso`.
-- Private sites sign in via the primary apex: set `BUILDHOST_PRIMARY_DOMAIN` (e.g. `pazer.build`). The browser authenticates there (same single GitHub OAuth app), then is handed back to the site domain -- no second OAuth app.
-- Setting `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to that apex: other hosts get a plain 404 (health, sign-in, `llms.txt` stay host-agnostic). Unset, everything stays host-agnostic as before.
+- Private sites sign in via the primary apex. `BUILDHOST_PRIMARY_DOMAIN` (e.g. `pazer.build`) is where the browser authenticates (same single GitHub OAuth app), then is handed back to the site domain -- no second OAuth app. With the apex set to `*` there is no such apex to hand off to. An unauthenticated browser on a private site gets the plain JSON 401 instead.
+- `BUILDHOST_PRIMARY_DOMAIN` also scopes the web UI and `/api/v1` to that apex: other hosts get a plain 404 (health, sign-in, `llms.txt` stay host-agnostic).
+
+### `BUILDHOST_PRIMARY_DOMAIN` is required
+
+The server refuses to start without it. Set it to the apex that owns the web UI, `/api/v1` and the GitHub OAuth callback:
+
+```
+BUILDHOST_PRIMARY_DOMAIN=example.com
+```
+
+Correct for a single-domain deployment that does not care which name reaches it -- opt in explicitly with the wildcard:. Do this to serve on whatever `Host` arrives -- the fully host-agnostic behavior.
+
+```
+BUILDHOST_PRIMARY_DOMAIN=*
+```
+
+Serving every domain is a deliberate choice. It has to be typed out. Leaving the variable unset is a startup error rather than a silent default. This is because an unpinned server reflects whatever `Host` it is sent into the URLs it generates (download links, `brew`/`apt` instructions, OAuth redirects).
 
 ## Large uploads
 
@@ -357,7 +375,9 @@ curl -X POST https://buildhost.example.com/api/v1/projects/myapp/download-links 
 
 Anyone with the `url` can download that artifact until it expires — no account or token needed. Minting requires a token with the `share` scope, authorized for the project. The admin dashboard exposes the same thing as a **"temp link"** button on each release's artifact list.
 
-The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project. It cannot outlive its expiry. A link is not individually revocable before its expiry. Rotate the signing key to invalidate every outstanding link.
+The link is a stateless HMAC signature. A server-side key, generated on the first start, keys it. The signature is bound to the exact artifact and expiry. A leaked link therefore reaches nothing else in the project. It cannot outlive its expiry. A link is not individually revocable before its expiry.
+
+Rotate the signing key to invalidate every outstanding link.
 
 ## API
 
@@ -407,7 +427,7 @@ Ask the apex, or the container by IP or localhost. The service subdomains (`stat
 {"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
 ```
 
-The same build info is printed by `buildhost version`.
+`buildhost version` prints the same build info.
 
 ## Configuration
 
@@ -415,6 +435,8 @@ Environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `BUILDHOST_PRIMARY_DOMAIN` | **required** | Apex owning the web UI, `/api/v1` and the GitHub OAuth callback; other hosts get a plain 404. Use `*` to serve every `Host` (host-agnostic). No default -- the server refuses to start without it |
+| `BUILDHOST_SITE_DOMAIN` | (off) | Dedicated domain for project static sites: serves each DNS-label-named project at `<project>.<domain>` |
 | `BUILDHOST_LISTEN_ADDR` | `:8080` | API listen address |
 | `BUILDHOST_ADMIN_LISTEN_ADDR` | `:9090` | Admin dashboard listen address (empty to disable) |
 | `BUILDHOST_DATA_DIR` | `./data` | Data directory |
@@ -496,7 +518,7 @@ By default the `push`, `pull_request` and `workflow_dispatch` events are allowed
 
 A `push` comes from a member or a collaborator. A `pull_request` from a fork receives no OIDC token at all, so only a same-repo PR, from a member, can authenticate. Only a user with write access to the repo can trigger a `workflow_dispatch`, which is a manual run. It therefore carries the same write-access guarantee as a `push`.
 
-`pull_request` is included by default so a PR-preview deploy works out of the box. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
+By default so a PR-preview deploy works out of the box, `pull_request` is included. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
 
 If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 

@@ -1,3 +1,5 @@
+// handlers.go holds the handlers code.
+
 package uploads
 
 import (

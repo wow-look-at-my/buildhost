@@ -8,31 +8,51 @@ import { tokenSource } from './oidc.ts';
 /** How long a transfer may go without a byte, before the headers or during the body. */
 export const DefaultStallMs = 30_000;
 
+/** A non-2xx answer. status says which, so a caller can tell a miss from a blip. */
+export class HTTPError extends Error {
+	readonly status: number;
+	constructor(status: number, body: string) {
+		super(`HTTP ${status}${body ? `: ${body.slice(0, 500)}` : ''}`);
+		this.status = status;
+	}
+}
+
 /**
- * Fetch url and return the whole body. It rejects on a non-2xx status, and
- * when no byte arrives for stallMs.
+ * Fetch url and hand each piece of the body to the writer that open returns for the response. It rejects with an HTTPError on a
+ * non-2xx status, and when no byte arrives for stallMs.
  */
-export async function fetchBody(url: string, headers: Record<string, string>, stallMs = DefaultStallMs): Promise<Buffer> {
+export async function fetchStream(
+	url: string, headers: Record<string, string>,
+	open: (response: Response) => (chunk: Uint8Array) => unknown,
+	stallMs = DefaultStallMs,
+): Promise<Response> {
 	const controller = new AbortController();
 	const stalled = () => controller.abort(new Error(`no bytes for ${stallMs / 1000}s`));
 	let timer = setTimeout(stalled, stallMs);
 	try {
 		const response = await fetch(url, { headers, redirect: 'follow', signal: controller.signal });
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		if (!response.ok) throw new HTTPError(response.status, await response.text());
 		if (!response.body) throw new Error('response has no body');
-		const chunks: Buffer[] = [];
+		const write = open(response);
 		const reader = response.body.getReader();
 		for (;;) {
 			clearTimeout(timer);
 			timer = setTimeout(stalled, stallMs);
 			const { done, value } = await reader.read();
 			if (done) break;
-			chunks.push(Buffer.from(value));
+			await write(value);
 		}
-		return Buffer.concat(chunks);
+		return response;
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/** Fetch url and return the whole body, on the terms of fetchStream. */
+export async function fetchBody(url: string, headers: Record<string, string>, stallMs = DefaultStallMs): Promise<Buffer> {
+	const chunks: Buffer[] = [];
+	await fetchStream(url, headers, () => (chunk) => chunks.push(Buffer.from(chunk)), stallMs);
+	return Buffer.concat(chunks);
 }
 
 const runnerArch: Record<string, string> = { X64: "amd64", ARM64: "arm64", X86: "386", ARM: "arm" };
@@ -50,8 +70,17 @@ export function downloadURL(f: { server: string; project: string; version: strin
 	return `https://dl.${host}/${f.project}?${query}`;
 }
 
-/**buildhost-download: writes the artifact and outputs path and downloaded. It retries a registry blip a bounded
- * number of times. With required false, a miss is a warning and downloaded=false, so a caller can fall back. */
+/** How long download waits between tries of a transfer that stalled or failed on the server side. */
+export const RetryMs = 5_000;
+
+/** A 4xx answer is the registry's verdict, so a try again gets the same answer. */
+function isFinal(e: unknown): boolean {
+	return e instanceof HTTPError && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429;
+}
+
+/**buildhost-download: writes the artifact and outputs path and downloaded. A stall, a network error or a 5xx gets
+ * a new try every RetryMs until the job timeout stops it. With required false, a miss is a warning and downloaded=false,
+ * so a caller can fall back. */
 export async function download(g: ActionGlobals, wait = (ms: number) => new Promise((r) => setTimeout(r, ms))): Promise<void> {
 	const { core, inputs } = g;
 	const project = String(inputs.project);
@@ -66,7 +95,7 @@ export async function download(g: ActionGlobals, wait = (ms: number) => new Prom
 	const destination: string = String(inputs.path) || path.join(process.env.RUNNER_TEMP!, project.split("/").pop()!);
 
 	let lastError = "";
-	for (let attempt = 1; attempt <= 3; attempt++) {
+	for (let attempt = 1; ; attempt++) {
 		try {
 			const auth = await bearer.bearer();
 			const body = await fetchBody(url, auth ? { Authorization: `Bearer ${auth}` } : {});
@@ -79,7 +108,9 @@ export async function download(g: ActionGlobals, wait = (ms: number) => new Prom
 			return;
 		} catch (e) {
 			lastError = e instanceof Error ? e.message : String(e);
-			if (attempt < 3) await wait(attempt * 1000);
+			if (isFinal(e)) break;
+			core.warning(`Try ${attempt} to download ${url} failed, next try in ${RetryMs / 1000}s: ${lastError}`);
+			await wait(RetryMs);
 		}
 	}
 

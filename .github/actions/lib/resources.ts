@@ -2,6 +2,7 @@
 
 import type { ActionGlobals } from './action-globals.ts';
 import { mintOidcToken } from './oidc.ts';
+import { dependsList } from './depends.ts';
 
 /** The token a request sends: the token input, else an OIDC token minted for the server when the job may mint one, else empty. */
 export async function resolveToken(server: string, token: string): Promise<string> {
@@ -90,13 +91,13 @@ export async function createProject(g: ActionGlobals): Promise<void> {
 	core.setOutput('id', String(data.id));
 }
 
-/** buildhost-create-release: outputs response and version. create_service, default_branch and apt_depends go only when set. */
+/** buildhost-create-release: outputs response and version. create_service, default_branch, apt_depends and depends go only when set. */
 export async function createRelease(g: ActionGlobals): Promise<void> {
 	const { core, github, inputs } = g;
 	const server = String(inputs.server);
 	const project = String(inputs.project);
 	const version = String(inputs.version);
-	const body: Record<string, string | boolean> = {
+	const body: Record<string, string | boolean | string[]> = {
 		git_branch: String(inputs.git_branch || github.ref_name),
 		git_commit: String(inputs.git_commit || github.sha),
 		notes: String(inputs.notes),
@@ -113,6 +114,8 @@ export async function createRelease(g: ActionGlobals): Promise<void> {
 	if (defaultBranch) body['default_branch'] = defaultBranch;
 	const aptDepends = String(inputs.apt_depends);
 	if (aptDepends) body['apt_depends'] = aptDepends;
+	const depends = dependsList(String(inputs.depends));
+	if (depends !== null) body['depends'] = depends;
 	const token = await resolveToken(server, String(inputs.token));
 	// an older server ignores a field it predates
 	const resp = await postJSON(`${server}/api/v1/projects/${project}/releases`, token, body);

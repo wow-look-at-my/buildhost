@@ -10,11 +10,13 @@ brew install pazer/build/go-toolchain
 
 Do not install a formula with a naked remote URL, such as `brew install https://brew.pazer.build/go-toolchain`. Modern Homebrew reads that as a formula name or a tap name. It does not clone it as a formula URL.
 
-On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead. macOS needs neither.
+On Linux these formulas have no bottle. `brew install` therefore runs Homebrew's build sandbox. That sandbox needs bubblewrap, from `apt install bubblewrap`, and Homebrew also instills its own. It needs an unprivileged user namespace too. A hardened host such as Ubuntu 24.04 may need `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. In a container or a CI runner with no user namespace, set `HOMEBREW_NO_SANDBOX_LINUX=1` instead.
+
+macOS needs neither.
 
 A slash-namespaced project folds `/` to `-` in its formula name. That is the same rule APT applies to a package name. Project `log-streamer/client` therefore installs as `brew install pazer/build/log-streamer-client`.
 
-A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name, and a Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
+A project whose name starts with a digit cannot be served as a formula at all. Homebrew derives the Ruby class from the formula name. A Ruby class cannot start with a digit. Such a project is therefore omitted from the tap.
 
 ## Private projects
 
@@ -37,7 +39,7 @@ brew install pazer/build/myrepo-myapp
 
 ## Background services (create_service)
 
-A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI, with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
+A project can declare that its binary runs as a background service. Declare it in the publishing repo's CI. That CI is with `create_service: 'true'` on the `buildhost-create-release` or `buildhost-publish` action. go-toolchain's composite spells that as `autorelease_args: create_service=true`. Every publish asserts the declared value. An absent input leaves the stored setting untouched. An operator can also flip it directly, with `PATCH /api/v1/projects/{project}` and a body of `{"create_service": true}`.
 
 Each install format materializes the setting its own way. A Homebrew formula gains a `service do` block. One command activates it, once. It then starts at login, and it survives an upgrade, because the block runs the `opt` path.
 
@@ -45,6 +47,8 @@ Each install format materializes the setting its own way. A Homebrew formula gai
 brew services start pazer/build/competent-search-thing
 ```
 
-Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`. That hook runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either. Run `brew services stop <tap>/<project>` before you remove it.
+Homebrew cannot run that for you at install. A formula's only install-time hook is `post_install`. That hook runs inside brew's sandbox. That profile denies every file write outside a build path, and `~/Library/LaunchAgents` is one of them. No formula can therefore register a LaunchAgent. `brew uninstall` does not stop a service either.
+
+Run `brew services stop <tap>/<project>` before you remove it.
 
 The service restarts only after a crash, through `keep_alive successful_exit: false`. A clean exit stays exited. It logs to `$(brew --prefix)/var/log/<name>.log`. On Linux prefer the APT install below, because brew's Linux units carry no graphical-session ordering. The APT section describes the deb materialization, which does auto-enable. Every other format, meaning raw, zip, npm and OCI, stores the flag and materializes nothing.

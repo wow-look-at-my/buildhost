@@ -1,3 +1,5 @@
+// brew.go holds the brew code.
+
 package repackage
 
 import (
@@ -52,6 +54,9 @@ var brewTemplate = template.Must(template.New("formula").Parse(`{{ if .Private }
   sha256 "{{ .Canonical.SHA256 }}"
   {{- if .DependsOnOS }}
   depends_on :{{ .DependsOnOS }}
+  {{- end }}
+  {{- range .Depends }}
+  depends_on "{{ . }}"
   {{- end }}
 
   {{- range .Resources }}
@@ -147,7 +152,16 @@ type brewData struct {
 	Service       bool
 	Canonical     BrewResource
 	DependsOnOS   string
+	Depends       []string
 	Resources     []BrewResource
+}
+
+// BrewTap is the tap name every install command adds the generated tap under.
+const BrewTap = "pazer/build"
+
+// BrewDependency is the tap-qualified name a formula depends on another formula by.
+func BrewDependency(formula string) string {
+	return BrewTap + "/" + formula
 }
 
 // brewCanonicalResource picks the deterministic resource emitted as the
@@ -201,8 +215,10 @@ type BrewFormula struct {
 	Private bool
 	// Versioned marks a name@version formula, whose class Homebrew renames to <name>AT<version>.
 	Versioned bool
-	// Service adds a `service do` block so `brew services start` manages the
-	Service   bool
+	// Service adds a `service do` block so `brew services start` manages.
+	Service bool
+	// Depends lists the tap formula names of the formulas this depends on.
+	Depends   []string
 	Resources []BrewResource
 }
 
@@ -231,6 +247,9 @@ func RenderBrewFormula(f BrewFormula) (*Output, error) {
 		Canonical:   brewCanonicalResource(f.Resources),
 		DependsOnOS: brewDependsOnOS(f.Resources),
 		Resources:   f.Resources,
+	}
+	for _, dep := range f.Depends {
+		d.Depends = append(d.Depends, sanitizeBrewString(BrewDependency(dep)))
 	}
 
 	var buf bytes.Buffer
@@ -293,6 +312,7 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 		Kind:        string(input.Artifact.Kind),
 		Private:     input.Project.IsPrivate,
 		Service:     input.Project.CreateService,
+		Depends:     brewDependsOf(input.Project),
 		Resources: []BrewResource{{
 			OS:     brewOS,
 			Arch:   brewArch,
@@ -300,6 +320,15 @@ func (b *Brew) Repackage(_ context.Context, input Input) (*Output, error) {
 			SHA256: sha,
 		}},
 	})
+}
+
+// brewDependsOf names the formula of each project p depends on by its folded name.
+func brewDependsOf(p db.Project) []string {
+	var names []string
+	for _, dep := range p.DependsOn() {
+		names = append(names, BrewFormulaName(dep))
+	}
+	return names
 }
 
 // BrewClassName derives the formula's Ruby class name from the project name. It MUST match what Homebrew derives from the formula FILENAME (Formulary.class_s of the folded name). Otherwise, the tap's formulas fail to load with "expected to find

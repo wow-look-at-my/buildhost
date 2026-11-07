@@ -1,3 +1,5 @@
+// strip.go holds the strip code.
+
 package strip
 
 import (

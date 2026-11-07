@@ -10,7 +10,7 @@
 4. None of that was visible, because the *committed* `app.js` was still the old, complete bundle. It is what `go:embed` shipped, what the tests read, and what users got. The TypeScript was dead source that nothing executed.
 5. Removing the committed artifacts (correctly — they are build output) made the binary embed a dashboard with no JavaScript, and turned tests red on `open static/app.js: no such file`.
 
-The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that was hiding it.
+The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that hides it.
 
 ## Why nothing caught it
 
@@ -21,7 +21,7 @@ The divergence existed from the moment of the conversion. It surfaced only when 
 
 ## The rule
 
-**A file that a build produces is not a file that git tracks.** Every generated input in this repo is gitignored and produced by a `//go:generate` directive, so one command materializes all of them (see the Build section of `CLAUDE.md`). The admin bundle is now one of them, via `scripts/build-admin-frontend.sh`.
+**A file that a build produces is not a file that git tracks.** A `//go:generate` directive gitignors every generated input in this repo, so one command materializes all of them (see the Build section of `CLAUDE.md`). The admin bundle is now one of them, via `scripts/build-admin-frontend.sh`.
 
 To commit an artifact "for convenience" trades a build dependency for a correctness hazard. The hazard is silent. The artifact keeps working while its source rots, and every test that reads it keeps passing.
 
@@ -39,15 +39,15 @@ git ls-files -i -c --exclude-standard # 2. committed at all
 
 ## How the restored bundle was verified
 
-Grepping the bundles for shared strings proves nothing much — a bundler splits string concatenation differently, so identical output reads as hundreds of differences. What settles it is rendering.
+Grepping the bundles for shared strings proves nothing much — a bundler splits string concatenation differently, so same output reads as hundreds of differences. What settles it renders.
 
 Both bundles were loaded into a `node:vm` sandbox with a stub DOM, driven through every route, and the resulting `#content` HTML compared byte-for-byte:
 
 - with no backend, so each bundle used its own built-in demo payloads.
-- with a stubbed `fetch` that served the old bundle's demo payloads to *both*, so they saw identical server responses.
+- with a stubbed `fetch` that served the old bundle's demo payloads to *both*, so they saw same server responses.
 - with the release page fixtured at `is_private` both false and true. That page's public and private split, plain links against mint-on-click signed links, is where the divergence was widest.
 
-All thirteen surfaces — routes plus the sidebar — came back identical in every pass. That is what "no functionality lost" was checked against, rather than asserted.
+All thirteen surfaces — routes plus the sidebar — came back same in every pass. That is what "no functionality lost" was checked against, rather than asserted.
 
 ## The other direction: work that was TypeScript-only
 
@@ -56,7 +56,7 @@ The bug cuts both ways. The committed bundle is what shipped, so anything writte
 - **`encodeURIComponent` on an admin API path.** A running server answers `200` to both `GET /api/projects/repo%2Fbinary` and `GET /api/projects/repo/binary` for a slash-namespaced project. That was verified. The change is therefore safe for the namespace feature, not merely untested.
 - **A decode of the route segments.** Kept, and guarded by `decodeSegment`. A malformed `%` sequence falls back to the raw text instead of a throw. The old router cannot do that, because it never decoded at all.
 
-Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, never an addition.
+Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, not an addition.
 
 ## When a test must assert on built output
 

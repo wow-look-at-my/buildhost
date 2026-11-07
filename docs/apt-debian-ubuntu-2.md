@@ -33,7 +33,7 @@ sudo apt update && sudo apt install myapp
 
 ## Private projects
 
-A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the HTTP Basic **password** field. The username is ignored, so any value works, and `token` is the convention here.
+A private project requires a token on every APT request. Put it in an `apt.conf.d`-style auth file. `apt update` and the package download then both authenticate. The package download redirects to the `static` subdomain. buildhost reads the token from the Basic **password** field (HTTP). The username is ignored, so any value works, and `token` is the convention here.
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings

@@ -17,6 +17,7 @@ import (
 	_ "github.com/wow-look-at-my/buildhost/internal/dl"
 	_ "github.com/wow-look-at-my/buildhost/internal/goproxy"
 	_ "github.com/wow-look-at-my/buildhost/internal/llms"
+	_ "github.com/wow-look-at-my/buildhost/internal/mirror"
 	_ "github.com/wow-look-at-my/buildhost/internal/npm"
 	_ "github.com/wow-look-at-my/buildhost/internal/oci"
 	_ "github.com/wow-look-at-my/buildhost/internal/sites"
@@ -60,7 +61,7 @@ func TestInitRegistersOnlySiteDomainRoutes(t *testing.T) {
 }
 
 // TestListRoutesCoversConfigConditionalFamilies pins the other half: the
-// enumerable table must contain the config-conditional routes, so a future
+// enumerable table must contain the config-conditional routes. A future
 // refactor cannot quietly drop them out of `buildhost routes` and leave the
 // check above trivially satisfied.
 func TestListRoutesCoversConfigConditionalFamilies(t *testing.T) {

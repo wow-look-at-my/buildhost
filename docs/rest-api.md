@@ -6,11 +6,13 @@ REST API handlers (projects, releases, artifacts, publish, tokens). Each handler
 
 ## Project settings
 
-`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. It takes `create_service` and `apt_depends`. A body that names `versioning` gets a 403 and changes nothing. A write token includes a CI job's OIDC token, so versioning changes only from the admin dashboard's project page. A switch to `auto` there keeps the existing releases, and the next number follows the highest one. Request fields are pointer-typed.
+`PATCH /api/v1/projects/{project}` (`UpdateProjectSettings`) updates the operator-set project settings. It takes `create_service`, `apt_depends` and `depends`. A body that names `versioning` gets a 403 and changes nothing. A write token includes a CI job's OIDC token, so versioning changes only from the admin dashboard's project page. A switch to `auto` there keeps the existing releases, and the next number follows the highest one. Request fields are pointer-typed.
 
 An absent one is unchanged. `parseRoute` counts PATCH as a write verb. The centralized requireProject therefore demands a write-scoped token authorized for the project. The release-create body accepts the same optional `create_service` bool, asserted on every publish, and an absent one is untouched. The publishing repo's CI is therefore the declarative surface. No documented flow has a manual API step.
 
 The release-create body takes an optional `apt_depends` string the same way. An empty string clears it. An invalid one is a 400 on either route, before anything is written, and the release-create makes no release.
+
+The optional `depends` list names the buildhost projects the project's packages depend on, for example `["ascii-timeline"]`. It follows the same rules: an absent field is untouched, `[]` clears it, and a refusal is a 400 that writes nothing. A name that does not resolve, or that the token cannot read, is refused as `depends: unknown project "<name>"`. So is the project itself, a dependency cycle, and a list longer than `db.MaxDepends`. The response's `depends` field holds the stored canonical names, joined by commas.
 
 The setting is packaging-format-AGNOSTIC. It says "this project runs as a background service". Each format materializes it in its own way. brew emits a `service do` block. `fmt=deb` emits an auto-enabled systemd user unit. raw, zip, npm and OCI only store it.
 

@@ -7,7 +7,10 @@ internal/admin/frontend/src/app.ts    # the whole dashboard (router, pages, API 
 internal/admin/frontend/src/html.ts   # the escaping HTML builder app.ts renders through
 internal/admin/frontend/src/copy.ts   # the <copy-btn> custom element
 internal/admin/frontend/src/types.ts  # the admin API's response shapes
+internal/admin/frontend/src/js-snippets.d.ts  # types for the js-snippets charts imported at run time
 ```
+
+Charts come from [js-snippets](https://github.com/wow-look-at-my/js-snippets), not from code in this tree. A page loads them with a dynamic `import()` of their `https://sites.pazer.build/js-snippets/@library/ui/<module>.js` URL. esbuild marks every `https://` import external. The browser fetches the module and its chunks. The admin CSP allows scripts from that origin (`jsSnippetsOrigin` in `internal/admin/admin.go`). A chart that does not exist yet goes into js-snippets first.
 
 ## Building
 

@@ -2,10 +2,11 @@
 
 import { writeFileSync } from 'node:fs';
 import type { ActionGlobals } from './action-globals';
+import { GITHUB_API } from './github-api.ts';
 
 /** Writes the named artifact of this run to zipPath as a zip. False after it reports that the run has no such artifact. */
 export async function downloadRunArtifact(g: ActionGlobals, name: string, zipPath: string): Promise<boolean> {
-	const oct = g.octokit(process.env.GITHUB_TOKEN!);
+	const oct = g.getOctokit(process.env.GITHUB_TOKEN!, { baseUrl: GITHUB_API });
 	const [owner, repo] = g.github.repository.split('/');
 	// the github context is rebuilt from environment variables, so run_id arrives as a string and octokit wants a number
 	const { data: { artifacts } } = await oct.rest.actions.listWorkflowRunArtifacts({ owner, repo, run_id: Number(g.github.run_id) });

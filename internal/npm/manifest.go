@@ -1,3 +1,5 @@
+// manifest.go holds the manifest code.
+
 package npm
 
 // Pre-built npm-package artifact support: reflecting the uploaded tarball's

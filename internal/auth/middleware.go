@@ -1,3 +1,5 @@
+// Sign in with GitHub browser session.
+
 package auth
 
 import (
@@ -41,13 +43,14 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 					rctx := WithOIDCError(r.Context(), err)
 					var eventErr *EventNotAllowedError
 					if errors.As(err, &eventErr) {
-						rctx = withRunLockOnlyRepo(rctx, OIDCRepoIdentity{
+						rctx = withRunOnlyRepo(rctx, OIDCRepoIdentity{
 							RepoPath:   vr.RepoPath,
 							Issuer:     vr.Issuer,
 							OwnerID:    vr.OwnerID,
 							RepoID:     vr.RepoID,
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
+							Ref:        vr.Ref,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -68,6 +71,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 							RunID:      vr.RunID,
 							RunAttempt: vr.RunAttempt,
 							Actor:      vr.Actor,
+							Ref:        vr.Ref,
 						})
 					}
 					r = r.WithContext(rctx)
@@ -194,7 +198,7 @@ func oidcAuthorizesProject(oidcProject, requested string) bool {
 
 // validNamespacedProjectName reports whether name is a well-formed project name,
 func validNamespacedProjectName(name string) bool {
-	if name == "" {
+	if name == "" || ReservedProjectName(name) {
 		return false
 	}
 	for _, seg := range strings.Split(name, "/") {
@@ -306,9 +310,9 @@ func requireProject(parse ParseFunc) func(http.Handler) http.Handler {
 				if repo := OIDCRepoFrom(r.Context()); repo.RepoPath != "" {
 					if repo.OwnerID != "" && repo.RepoID != "" {
 						if project.GithubOwnerID != "" || project.GithubRepoID != "" {
-							// Rename/resurrection guard: GitHub NAMES are reusable -- delete (or
+							// Rename/resurrection guard. GitHub NAMES are reusable -- delete (or
 							// rename) a repo and a stranger can re-register the name and mint
-							// valid OIDC tokens for the same "owner/repo" -- but the numeric IDs
+							// valid OIDC tokens for the same "owner/repo". But the numeric IDs
 							// are not. A token whose IDs disagree with the pin may not act on the
 							// project, read or write.
 							//

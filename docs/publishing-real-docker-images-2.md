@@ -51,7 +51,7 @@ To fetch an artifact back in a workflow, use `buildhost-download`. It resolves t
 
 It outputs `path`. With `required: 'false'` a missing artifact sets `downloaded: 'false'` instead of a failure. A caller can therefore fall back.
 
-For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To obtain a CLI that can do that is the action's problem, and not yours.
+For a build you drive yourself, use `buildhost-docker-push`. It takes an OCI layout you already produced, and pushes it in chunks. A layer over the proxy's body cap therefore still goes through. To get a CLI that can do that is the action's problem, and not yours.
 
 ```yaml
 - run: docker buildx build --output type=oci,tar=false,dest=layout .

@@ -5,6 +5,20 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { ActionGlobals } from '../../.github/actions/lib/action-globals.ts';
 
+export type ServeHandler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void;
+
+/** A real HTTP server on a free loopback port. close drops its open connections too. */
+export async function serve(handler: ServeHandler): Promise<{ url: string; close: () => Promise<void> }> {
+	const http = await import('node:http');
+	const server = http.createServer(handler);
+	await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+	const port = (server.address() as import('node:net').AddressInfo).port;
+	return {
+		url: `http://127.0.0.1:${port}/f`,
+		close: () => new Promise<void>((r) => { server.closeAllConnections(); server.close(() => r()); }),
+	};
+}
+
 /** A fake carries only the globals the code under test reads, so it stands in for the whole set the typescript action injects. */
 export function globalsOf(fake: object): ActionGlobals {
 	return fake as ActionGlobals;
