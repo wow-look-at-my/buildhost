@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the buildx exporter's compression options for one optional level.
+# Prints the buildx exporter's compression options for a single optional level.
 set -euo pipefail
 
 level="${1-}"

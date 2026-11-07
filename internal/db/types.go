@@ -1,3 +1,5 @@
+// types.go holds the types code.
+
 package db
 
 import (

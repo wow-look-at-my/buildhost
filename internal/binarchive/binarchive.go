@@ -1,3 +1,5 @@
+// binarchive.go holds the binarchive code.
+
 package binarchive
 
 import (

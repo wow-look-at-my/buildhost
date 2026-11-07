@@ -1,3 +1,5 @@
+// repackage.go holds the repackage code.
+
 package repackage
 
 import (

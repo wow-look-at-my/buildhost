@@ -1,31 +1,10 @@
 // Reads of a file the publish uploads. The caller passes node's fs and crypto modules.
 
-import type { Send } from './client';
-import type * as Upload from './upload';
-
 export interface Fs {
 	createReadStream(p: string): NodeJS.ReadableStream;
 	openSync(p: string, flags: string): number;
 	readSync(fd: number, buf: Buffer, offset: number, length: number, position: number): number;
 	closeSync(fd: number): void;
-	statSync(p: string): { size: number };
-}
-
-export interface Response { status: number; text: string }
-
-export type PutFile = (urlPath: string, filePath: string, sha256: string, headers?: Record<string, string>) => Promise<Response>;
-
-/**
- * Returns a function that sends the bytes of a file. Cloudflare refuses a large body, so a body
- * past the server's advertised direct limit goes through an upload session.
- */
-export function filePutter(send: Send, core: Upload.Core, upload: typeof Upload, fs: Fs): PutFile {
-	let directLimit = -1;
-	return async (urlPath, filePath, sha256, headers) => {
-		if (directLimit < 0) directLimit = await upload.directLimit(send, core);
-		const body = { size: fs.statSync(filePath).size, sha256, read: (offset: number, length: number) => readChunk(fs, filePath, offset, length) };
-		return upload.putFile(send, core, { urlPath, body, headers, directLimit });
-	};
 }
 
 export interface Crypto { createHash(alg: string): { update(b: Buffer): unknown; digest(enc: 'hex'): string } }
@@ -59,4 +38,21 @@ export function readChunk(fs: Fs, filePath: string, offset: number, length: numb
 		fs.closeSync(fd);
 	}
 	return buf;
+}
+
+/** The parts of node's fs a fileBody reads through, beside the ones readChunk takes. */
+export interface BodyFs extends Fs {
+	statSync(p: string): { size: number };
+	openAsBlob(p: string): Promise<Blob>;
+}
+
+/** An upload Body for a file: its size and sha256, with chunks read from disk and streamed as Blob slices. */
+export async function fileBody(fs: BodyFs, filePath: string, sha256: string): Promise<import('./upload').Body> {
+	const whole = await fs.openAsBlob(filePath);
+	return {
+		size: fs.statSync(filePath).size,
+		sha256,
+		read: (offset, length) => readChunk(fs, filePath, offset, length),
+		blob: (offset, length) => whole.slice(offset, offset + length),
+	};
 }

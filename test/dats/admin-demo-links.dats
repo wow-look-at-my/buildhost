@@ -8,7 +8,7 @@
 # node test the suite invokes.
 #
 # The workflow builds internal/admin/static and installs playwright-core;
-# $PLAYWRIGHT_CHROME_PATH names a browser when there is one outside a runner.
+# $PLAYWRIGHT_CHROME_PATH names a browser when there is a single outside a runner.
 #
 # see docs/admin-frontend.md
 
@@ -18,5 +18,6 @@ tests:
 	  outputs:
 		stdout:
 			- "every in-app link rendered"
+			- "the live dashboard never drew demo data"
 		!stdout:
 			- "rendered the error page"

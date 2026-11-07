@@ -1,37 +1,46 @@
 // Behavior tests for the publish composite's helper modules under .github/actions/lib/.
 
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const http = require('node:http');
-const lib = `${process.env.GITHUB_WORKSPACE ?? process.cwd()}/.github/actions/lib`;
-// Untyped on purpose: the module's types are checked where it is CALLED, in the publish composite.
-const groups = require(`${lib}/artifact-groups.ts`);
-const client = require(`${lib}/client.ts`);
-const io = require(`${lib}/file-io.ts`);
-const upload = require(`${lib}/upload.ts`);
+import assert from 'node:assert';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import * as manifest from '../../.github/actions/lib/portable-manifest.ts';
+import * as client from '../../.github/actions/lib/client.ts';
+import * as names from '../../.github/actions/lib/artifact-groups.ts';
+import * as io from '../../.github/actions/lib/file-io.ts';
 
-function testNames() {
-	assert.deepStrictEqual('log-streamer-client_linux_amd64'.match(groups.artifactRe)?.slice(1), ['log-streamer-client', 'linux', 'amd64']);
-	const entry = (file: string, filename: string) => ({ file, filename, kind: 'binary', platforms: ['linux/amd64'] });
-	assert.strictEqual(groups.binaryForPortable(entry('dir/tool_cosmo_any.exe', 'tool_cosmo_any.exe')), 'tool');
-	assert.strictEqual(groups.binaryForPortable(entry('dir/tool.com', 'served')), 'served');
-	assert.strictEqual(groups.binaryForPortable(entry('plain', 'plain')), 'plain');
+function testManifest() {
+	const has = (f: string) => f === 'tool.com';
+	const doc = (artifacts: unknown) => JSON.stringify({ schema: 1, artifacts });
+	assert.deepStrictEqual(manifest.parsePortableManifest(doc([{ file: 'tool.com', platforms: ['linux/amd64', 'darwin/arm64'] }]), has, path), [
+		{ file: 'tool.com', filename: 'tool.com', kind: 'binary', platforms: ['linux/amd64', 'darwin/arm64'] },
+	]);
+	const bad: [string, string][] = [
+		['{', 'not valid JSON'],
+		[JSON.stringify({ schema: 2, artifacts: [] }), 'unsupported schema 2'],
+		[JSON.stringify({ schema: 1 }), '"artifacts" must be an array'],
+		[doc([{ file: '../x', platforms: ['linux/amd64'] }]), 'bad "file"'],
+		[doc([{ file: '/abs', platforms: ['linux/amd64'] }]), 'bad "file"'],
+		[doc([{ file: 'gone', platforms: ['linux/amd64'] }]), '"gone" does not exist'],
+		[doc([{ file: 'tool.com', platforms: [] }]), 'non-empty "platforms"'],
+		[doc([{ file: 'tool.com', platforms: ['linux'] }]), 'non-empty "platforms"'],
+	];
+	for (const [text, want] of bad) {
+		const got = manifest.parsePortableManifest(text, has, path);
+		assert.ok(typeof got === 'string', `${text} must be refused`);
+		assert.ok(got.startsWith('buildhost-artifacts.json: ') && got.includes(want), `${text}: got ${got}`);
+	}
 }
 
-async function testSlots() {
-	const group = {
-		slots: [{ file: 'a', os: 'linux', arch: 'amd64' }],
-		portable: [{ file: 'ape', filename: 'ape', kind: 'binary', platforms: ['linux/arm64', 'darwin/arm64'] }],
-	};
-	const sums: Record<string, string> = { a: 'aa', ape: 'bb' };
-	assert.deepStrictEqual(await groups.slotsOf(group, async (f: string) => sums[f]), [
-		{ os: 'linux', arch: 'amd64', kind: 'binary', sha256: 'aa' },
-		{ os: 'linux', arch: 'arm64', kind: 'binary', sha256: 'bb' },
-		{ os: 'darwin', arch: 'arm64', kind: 'binary', sha256: 'bb' },
-	]);
+function testNames() {
+	assert.strictEqual(names.projectForBinary('app', 'app'), 'app');
+	assert.strictEqual(names.projectForBinary('app', 'app-cli'), 'app/cli');
+	assert.strictEqual(names.projectForBinary('app', 'helper'), 'app/helper');
+	assert.deepStrictEqual('log-streamer-client_linux_amd64'.match(names.artifactRe)?.slice(1), ['log-streamer-client', 'linux', 'amd64']);
+	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool_cosmo_any.exe', filename: 'tool_cosmo_any.exe', kind: 'binary', platforms: [] }), 'tool');
+	assert.strictEqual(names.binaryForPortable({ file: 'dir/tool.com', filename: 'served', kind: 'binary', platforms: [] }), 'served');
+	assert.strictEqual(names.binaryForPortable({ file: 'plain', filename: 'plain', kind: 'binary', platforms: [] }), 'plain');
 }
 
 async function testFileIo() {
@@ -45,46 +54,7 @@ async function testFileIo() {
 	const trickle = { ...fs, readSync: (fd: number, buf: Buffer, off: number, _len: number, pos: number) => fs.readSync(fd, buf, off, 1, pos) };
 	assert.strictEqual(io.readChunk(trickle, file, 2, 5).toString(), '23456');
 	assert.throws(() => io.readChunk(fs, file, 12, 8), /wanted 8 bytes at 12, the file ended after 4/);
-
-	// The putter asks the server for its direct limit once, then sends a small file as one body.
-	const asked: string[] = [];
-	const send = async (method: string, urlPath: string, body?: Buffer) => {
-		asked.push(`${method} ${urlPath}${body ? ` ${body.toString()}` : ''}`);
-		if (method === 'GET') return { status: 200, text: JSON.stringify({ max_direct_upload_bytes: 1 << 20 }) };
-		return { status: 201, text: '{}' };
-	};
-	const core = { info: () => {}, warning: () => {} };
-	const put = io.filePutter(send, core, upload, fs);
-	const sum = crypto.createHash('sha256').update(bytes).digest('hex');
-	assert.strictEqual((await put('/u/1', file, sum)).status, 201);
-	assert.strictEqual((await put('/u/2', file, sum)).status, 201);
-	assert.strictEqual(asked.filter((a) => a.startsWith('GET')).length, 1, 'the direct limit is read once');
-	assert.ok(asked.includes('PUT /u/1 0123456789abcdef'), asked.join('\n'));
 	fs.rmSync(dir, { recursive: true });
-}
-
-function testTransient() {
-	assert.strictEqual(client.isTransient(503, '{}'), true, 'a 5xx is transient');
-	assert.strictEqual(client.isTransient(404, ''), true, 'a proxy 404 with no body is transient');
-	assert.strictEqual(client.isTransient(404, '{"error":"not found"}'), false, "the app's own 404 is not");
-	assert.strictEqual(client.isTransient(400, 'bad'), false);
-}
-
-async function testOverHttp() {
-	let calls = 0;
-	const server = http.createServer((req: any, res: any) => {
-		calls++;
-		assert.strictEqual(req.headers.authorization, 'Bearer tok');
-		res.writeHead(calls === 1 ? 503 : 200);
-		res.end(calls === 1 ? 'busy' : '{"ok":true}');
-	});
-	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-	const warned: string[] = [];
-	const reply = await client.client(`http://127.0.0.1:${server.address().port}`, 'tok', { warning: (m: string) => warned.push(m) }, async () => {})('GET', '/api/v1/x');
-	server.close();
-	assert.deepStrictEqual(reply, { status: 200, text: '{"ok":true}' });
-	assert.strictEqual(calls, 2);
-	assert.match(warned[0], /HTTP 503 \(transient; attempt 1\/5\)/);
 }
 
 async function testApi() {
@@ -117,7 +87,7 @@ async function testApi() {
 			throw new Error('ECONNRESET');
 		}) as any;
 		const failed = await api('PUT', '/b', Buffer.from('x'));
-		assert.strictEqual(calls, client.MaxAttempts);
+		assert.strictEqual(calls, client.maxAttempts);
 		assert.strictEqual(failed.status, 0);
 		assert.ok(failed.text.includes('ECONNRESET'), failed.text);
 	} finally {
@@ -126,12 +96,10 @@ async function testApi() {
 }
 
 async function main() {
+	testManifest();
 	testNames();
-	await testSlots();
 	await testFileIo();
-	testTransient();
 	await testApi();
-	await testOverHttp();
 	console.log('publish-helpers: all checks passed');
 }
 

@@ -1,3 +1,5 @@
+// readiness.go holds the readiness code.
+
 package goproxy
 
 import (

@@ -1,3 +1,5 @@
+// platform.go holds the platform code.
+
 package npm
 
 // Per-platform binary sub-packages: the platform packument, npm<->buildhost

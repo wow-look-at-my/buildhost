@@ -1,3 +1,5 @@
+// elf.go holds the elf code.
+
 package strip
 
 import (

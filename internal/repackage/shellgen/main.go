@@ -22,17 +22,50 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	registryURL = "https://registry-1.docker.io"
-	tokenURL    = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/busybox:pull"
 	imageRepo   = "library/busybox"
 	maxManifest = 1 << 20
 	maxLayer    = 64 << 20
 )
+
+// The tests point these at a local server.
+var (
+	registryURL = "https://registry-1.docker.io"
+	tokenURL    = "https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/busybox:pull"
+)
+
+// A rate limit or a server error clears by itself.
+var (
+	retryEvery    = 5 * time.Second
+	fetchDeadline = 10 * time.Minute
+)
+
+// retryable reports whether a registry status clears by itself.
+func retryable(status int) bool { return status == http.StatusTooManyRequests || status >= 500 }
+
+// retryWait is how long to wait before asking again.
+func retryWait(resp *http.Response) time.Duration {
+	if s, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && s > 0 {
+		return time.Duration(s) * time.Second
+	}
+	return retryEvery
+}
+
+// pause logs a retry and waits, or fails when the deadline has passed.
+func pause(ctx context.Context, what string, status int, wait time.Duration) error {
+	fmt.Fprintf(os.Stderr, "shellgen: %s: HTTP %d; asking again in %s\n", what, status, wait)
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("%s: HTTP %d, and the %s deadline passed while waiting", what, status, fetchDeadline)
+	case <-time.After(wait):
+		return nil
+	}
+}
 
 // images pins the busybox:musl manifest per architecture. The pin is what makes
 // the fetch reproducible, and what the download is checked against.
@@ -56,7 +89,8 @@ func run(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), fetchDeadline)
+	defer cancel()
 	token, err := fetchToken(ctx)
 	if err != nil {
 		return err
@@ -88,13 +122,24 @@ func run(dir string) error {
 func client() *http.Client { return &http.Client{Timeout: 2 * time.Minute} }
 
 func fetchToken(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := client().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("registry token: %w", err)
+	var resp *http.Response
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
+		if err != nil {
+			return "", err
+		}
+		resp, err = client().Do(req)
+		if err != nil {
+			return "", fmt.Errorf("registry token: %w", err)
+		}
+		if !retryable(resp.StatusCode) {
+			break
+		}
+		status, wait := resp.StatusCode, retryWait(resp)
+		resp.Body.Close()
+		if err := pause(ctx, "registry token", status, wait); err != nil {
+			return "", err
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -113,23 +158,31 @@ func fetchToken(ctx context.Context) (string, error) {
 }
 
 func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+p, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if accept != "" {
-		req.Header.Set("Accept", accept)
-	}
-	resp, err := client().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", p, err)
-	}
-	if resp.StatusCode != http.StatusOK {
+	for {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+p, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		resp, err := client().Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("GET %s: %w", p, err)
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp.Body, nil
+		}
+		status, wait := resp.StatusCode, retryWait(resp)
 		resp.Body.Close()
-		return nil, fmt.Errorf("GET %s: HTTP %d", p, resp.StatusCode)
+		if !retryable(status) {
+			return nil, fmt.Errorf("GET %s: HTTP %d", p, status)
+		}
+		if err := pause(ctx, "GET "+p, status, wait); err != nil {
+			return nil, err
+		}
 	}
-	return resp.Body, nil
 }
 
 func fetch(ctx context.Context, token, manifestDigest string) ([]byte, []string, error) {

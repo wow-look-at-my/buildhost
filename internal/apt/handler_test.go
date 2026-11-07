@@ -411,11 +411,10 @@ func TestGoArchFromDeb(t *testing.T) {
 	}
 }
 
-// --- Private project tests ---------------------------------------------------
-// Note: Auth enforcement for private projects is now handled by the
-// requireProject middleware (tested in the auth package). These tests verify
-// that the handler works correctly for a private project when the middleware
-// has already authorized the request and set up context.
+// Private project tests Note: Auth enforcement for private projects is now
+// handled by the requireProject middleware (tested in the auth package).
+// These tests verify that the handler works correctly for a private project
+// when the middleware has already authorized the request and set up context.
 
 func TestServeHTTP_PrivateProject_Release_WithValidContext(t *testing.T) {
 	h, d, _ := setupTest(t)

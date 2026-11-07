@@ -1,3 +1,5 @@
+// goproxy.go holds the goproxy code.
+
 package admin
 
 import (

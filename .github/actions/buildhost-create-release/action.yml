@@ -58,6 +58,17 @@ inputs:
       value untouched. Clear it with PATCH /api/v1/projects/{project}.
     required: false
     default: ''
+  depends:
+    description: >-
+      The buildhost projects this project's packages depend on, separated by
+      commas or whitespace (e.g. 'ascii-timeline'). The deb Depends field
+      names each one, the APT install.sh adds its repository, and the brew
+      formula declares depends_on for it, so apt and brew install it too.
+      The server refuses a name it cannot resolve, and the step fails. Empty
+      (the default) sends nothing and leaves the stored list untouched.
+      Clear it with PATCH /api/v1/projects/{project} and "depends": [].
+    required: false
+    default: ''
 
 outputs:
   response:
@@ -72,55 +83,8 @@ runs:
   steps:
     - id: create
       uses: wow-look-at-my/actions@typescript#latest
-      env:
-        # An env var carries the value, so no character in it can break the script.
-        BUILDHOST_APT_DEPENDS: ${{ inputs.apt_depends }}
       with:
+        inputs: ${{ toJSON(inputs) }}
         script: |
-          await (async () => {
-            const server: string = "${{ inputs.server }}";
-            let token: string = "${{ inputs.token }}";
-            if (!token) {
-              const url = env.ACTIONS_ID_TOKEN_REQUEST_URL;
-              const bearer = env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
-              if (url && bearer) {
-                const r = await fetch(`${url}&audience=${server}`, { headers: { Authorization: `Bearer ${bearer}` } });
-                token = ((await r.json()) as { value: string }).value ?? '';
-              }
-            }
-            const project: string = "${{ inputs.project }}";
-            const version: string = "${{ inputs.version }}";
-            const gitBranchInput: string = "${{ inputs.git_branch }}";
-            const gitCommitInput: string = "${{ inputs.git_commit }}";
-            const gitBranch: string = gitBranchInput || github.ref_name;
-            const gitCommit: string = gitCommitInput || github.sha;
-
-            const body: Record<string, string | boolean> = { git_branch: gitBranch, git_commit: gitCommit, notes: "${{ inputs.notes }}" };
-            if (version) body['version'] = version;
-            const brewService: string = "${{ inputs.create_service }}";
-            if (brewService === 'true' || brewService === 'false') {
-              body['create_service'] = brewService === 'true';
-            } else if (brewService !== '') {
-              core.setFailed(`create_service must be 'true', 'false', or empty; got '${brewService}'`);
-              return;
-            }
-            const defaultBranch: string = "${{ inputs.default_branch }}";
-            // sends default_branch only when set, leaving the stored setting untouched otherwise
-            if (defaultBranch) body['default_branch'] = defaultBranch;
-            const aptDepends: string = process.env.BUILDHOST_APT_DEPENDS ?? '';
-            if (aptDepends) body['apt_depends'] = aptDepends;
-
-            const resp = await fetch(`${server}/api/v1/projects/${project}/releases`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              // an older server ignores this field if it predates default_branch
-              body: JSON.stringify(body),
-            });
-            const text = await resp.text();
-            if (!resp.ok) { core.setFailed(`HTTP ${resp.status}: ${text}`); return; }
-
-            const data = JSON.parse(text);
-            core.info(JSON.stringify(data, null, 2));
-            core.setOutput('response', text);
-            core.setOutput('version', data.version);
-          })();
+          import { createRelease } from '../lib/resources';
+          await createRelease({ core, github, context, octokit, getOctokit, exec, inputs, steps });

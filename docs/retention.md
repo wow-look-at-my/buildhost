@@ -18,11 +18,19 @@ The background sweeper is opt-in through `BUILDHOST_RETENTION_INTERVAL`, where 0
 
 NOTE: there is no standalone repackage-cache eviction. A non-OCI format is regenerated per request and never stored. See `docs/eviction-policies.md`. A dedicated docker and OCI blob GC is deferred.
 
+## Deleted branches
+
+The Retention page has a **Deleted branches** card. It runs a separate pass, `RunDeletedBranches` in `internal/retention/deletedbranches.go`, through `GET /api/retention/deleted-branches` (preview) and `POST /api/retention/deleted-branches` (delete, with the same in-flight guard). The pass lists every release older than the recency guard on a branch other than its project's default, for projects with a `github_repo`. It then asks GitHub about each branch through the mirror (`auth.GitHubRefPresent`).
+
+A build records `GITHUB_REF_NAME`. A branch name can also be a tag or `<pr>/merge`. A release goes only when GitHub answered for the repository, the name is not its live default branch. GitHub answered 404 for a branch and a tag of that name. A `<pr>/merge` name goes when its pull request is closed or missing. Any other answer marks the branch `unknown` and keeps it.
+
+Inside a deleted branch nothing is pinned: the tip, drafts, OCI tags and docker releases all go. Site deployments are out of scope, because a site stores a sanitized branch name that GitHub cannot confirm.
+
 ## The file inventory (why so little is reclaimable)
 
 A reclaimable total says how much comes back. It never says what holds the rest. `GET /api/retention/inventory` on the admin port answers that. It returns one entry per stored file, plus the pins that keep it. The Retention page has a **Copy file inventory (JSON)** button and a **Download file inventory (JSON)** button. Both fetch this endpoint and hand you the whole document.
 
-`retention.Inventory` builds it. It reads every table that references a blob. Those are `artifacts` (raw, stripped and debug keys), `packaged_artifacts`, `sites`, `oci_blob_links` and `goproxy_versions`. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
+`retention.Inventory` builds it. It reads every table that references a blob. Those are `artifacts` (raw, stripped and debug keys), `packaged_artifacts`, `sites`, `oci_blob_links`, `goproxy_versions`, `run_files` and `cache_entries`. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
 
 A blob with multiple references therefore frees nothing until both releases go.
 
@@ -38,6 +46,8 @@ Each entry carries `holds`, every pin that applies, most permanent first, and `h
 | `draft` | a deliberate draft, never swept |
 | `shared-blob` | the release goes, another row still references the bytes |
 | `site`, `oci-blob`, `goproxy` | not release-scoped, so eviction never frees it |
+| `run-file` | a CI run's hand-off, which `internal/runfiles` deletes after the run (`docs/run-files.md`) |
+| `cache` | a CI cache entry, which `internal/cicache` evicts when unused or under disk pressure (`docs/cache.md`) |
 
 An empty `hold` with `reclaimable: true` means the current policy frees the blob now. `by_hold` groups the whole server by that reason, biggest first. The top row is the answer to why the reclaimable number is small. `by_role` groups by which table holds the reference.
 

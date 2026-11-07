@@ -16,7 +16,7 @@ shared:
 			WORK="$(dirname "$ENV_FILE")"
 			"$REPO/scripts/brew-doc-flows.sh" private "$BREW_HOST" > "$WORK/private.sh"
 			echo "--- documented private flow, executed verbatim ---"
-			sed 's|x:[^@]*@|x:***@|' "$WORK/private.sh"
+			sed 's|Basic [^"]*|Basic ***|' "$WORK/private.sh"
 			TOKEN="$BUILDHOST_TOKEN" bash -euo pipefail "$WORK/private.sh"
 			TAP="$(brew --repository pazer/build)"
 			for _ in $(seq 60); do
@@ -25,6 +25,8 @@ shared:
 				sleep 1
 			done
 			HOMEBREW_NO_GITHUB_API=1 HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew version-install pazer/build/myrepo@0.9.0
+			# brew-pubapp is public and depends on the private brew-secret. Only the public one is named here.
+			HOMEBREW_BUILDHOST_TOKEN="$BUILDHOST_TOKEN" brew install pazer/build/brew-pubapp
 			echo "TAP='$TAP'" > "$ENV_FILE"
 
 setup:
@@ -43,6 +45,21 @@ tests:
 	  outputs:
 		stdout:
 			- "kept-installed"
+
+	- desc: brew install of a public formula installs its private dependency through the authenticated tap
+	  cmd: |
+		set -eu
+		. {shared.env}
+		grep -n 'depends_on "pazer/build/brew-secret"' "$TAP/Formula/brew-pubapp.rb"
+		grep -q 'BuildhostCurlDownloadStrategy' "$TAP/Formula/brew-secret.rb" \
+			|| { echo "the private dependency's formula downloads without the token strategy" >&2; exit 1; }
+		brew list --formula pazer/build/brew-secret >/dev/null
+		brew-secret
+		brew-pubapp
+	  outputs:
+		stdout:
+			- "buildhost-homebrew-brew-secret-ok"
+			- "buildhost-homebrew-brew-pubapp-ok"
 
 	- desc: the privately installed binary executes
 	  cmd: myapp
@@ -71,28 +88,31 @@ tests:
 		stdout:
 			- "pazer/build/myrepo"
 
-	# `brew update` refreshes a tap by fetching its git remote, and for the
-	# authenticated tap the credentials live in that stored URL. Proving the
-	# refetch works is the cheap half of a full brew update.
-	- desc: the authenticated tap refetches with its stored credentials
+	# `brew update` refreshes a tap by fetching its git remote, with the token
+	# the git config header carries. A token in the remote URL makes git report
+	# a redirect, and Homebrew then rewrites the remote without the token.
+	- desc: the authenticated tap refetches through the header, with no redirect
 	  cmd: |
 		set -eu
 		. {shared.env}
 		remote="$(git -C "$TAP" remote get-url origin)"
 		case "$remote" in
+			*@*) echo "tap remote carries a credential: $remote" >&2; exit 1 ;;
 			*"/private/tap.git") ;;
 			*) echo "tap remote is not the private tap URL" >&2; exit 1 ;;
 		esac
-		git -C "$TAP" fetch origin
+		git -C "$TAP" fetch origin 2> fetch.err
+		if grep -q 'redirecting' fetch.err; then
+			echo "the fetch reported a redirect, which Homebrew acts on" >&2; cat fetch.err >&2; exit 1
+		fi
 		echo "refetch-ok"
 	  outputs:
 		stdout:
 			- "refetch-ok"
 
-	# One syntactically broken formula -- `class 7zip < Formula` from a
+	# A single syntactically broken formula -- `class 7zip < Formula` from a
 	# digit-leading project name -- surfaces to users as an ".rb: syntax error"
-	# and can break evaluation of the whole tap. The tap here is the superset
-	# one, so this covers every formula the server can serve.
+	# and can break evaluation of the whole tap.
 	- desc: every formula in the authenticated tap is valid Ruby
 	  cmd: |
 		set -eu

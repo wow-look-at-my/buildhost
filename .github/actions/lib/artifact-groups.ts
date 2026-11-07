@@ -102,7 +102,7 @@ export function findArtifacts(dir: Dir, project: string): Found {
 	return { ok: true, groups, files, portable };
 }
 
-/** Every slot the group would upload, with the sha256 of its bytes. `sha256` hashes a file of the publish directory. */
+/** Every slot the group fills, with the sha256 of its bytes. sha256 hashes a file of the publish directory. */
 export async function slotsOf(group: Group, sha256: (file: string) => Promise<string>): Promise<Slot[]> {
 	const slots: Slot[] = [];
 	for (const item of group.slots) {
@@ -111,8 +111,8 @@ export async function slotsOf(group: Group, sha256: (file: string) => Promise<st
 	for (const entry of group.portable) {
 		const sum = await sha256(entry.file);
 		for (const platform of entry.platforms) {
-			const [platformOS, platformArch] = platform.split('/');
-			slots.push({ os: platformOS, arch: platformArch, kind: entry.kind, sha256: sum });
+			const [os, arch] = platform.split('/');
+			slots.push({ os, arch, kind: entry.kind, sha256: sum });
 		}
 	}
 	return slots;
