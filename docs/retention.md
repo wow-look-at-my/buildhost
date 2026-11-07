@@ -12,9 +12,9 @@ The admin endpoints are in `internal/admin/retention.go`: `GET/PUT /api/retentio
 
 `keep_n=0` still keeps each branch tip, because the keep-N query floors at `max(keep_n, 1)`.
 
-**Report-only by default.** The background sweeper deletes only when `BUILDHOST_RETENTION_ENFORCE=true`. A manual dashboard or CLI run deletes when the operator confirms it with `--enforce` or the run button. Things are pinned and never evicted: each branch's latest published release, an oci-tagged release, a `kind=docker` release, and anything newer than the recency guard. The shared `DeleteBlobIfUnreferenced` helper also fixes the sites delete and re-upload paths. Those called `Store.Delete` unconditionally, which breaks a dedup-shared blob.
+**Report-only by default.** The background sweeper deletes only when `BUILDHOST_RETENTION_ENFORCE=true`. A manual dashboard or CLI run deletes when the operator confirms it with `--enforce` or the run button. Things are pinned and never evicted: each branch's latest published release, an oci-tagged release, a `kind=docker` release. This is anything newer than the recency guard. The shared `DeleteBlobIfUnreferenced` helper also fixes the sites delete and re-upload paths.
 
-The background sweeper is opt-in through `BUILDHOST_RETENTION_INTERVAL`, where 0 is off. It defers while writes are in flight (`admin.InflightWrites()`).
+Those called `Store.Delete` unconditionally, which breaks a dedup-shared blob. The background sweeper is opt-in through `BUILDHOST_RETENTION_INTERVAL`, where 0 is off. It defers while writes are in flight (`admin.InflightWrites()`).
 
 NOTE: there is no standalone repackage-cache eviction. A non-OCI format is regenerated per request and never stored. See `docs/eviction-policies.md`. A dedicated docker and OCI blob GC is deferred.
 

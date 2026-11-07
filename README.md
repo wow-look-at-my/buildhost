@@ -427,7 +427,7 @@ Ask the apex, or the container by IP or localhost. The service subdomains (`stat
 {"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
 ```
 
-Buil prints the same build infodhost version`.
+`buildhost version` prints the same build info.
 
 ## Configuration
 
@@ -499,7 +499,7 @@ No manual project creation or OIDC policy setup needed.
 
 A project name may contain `/`, and it nests to any depth, as `log-streamer/client` does. A repository's OIDC token owns its whole namespace. Repo `R` may create and publish `R`, and any `R/<...>` beneath it. It may never touch a sibling such as `R-evil`, and never an unrelated project.
 
-A repo that ships several binaries can therefore publish each to its own project. go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
+That is what lets a repo that ships several binaries publish each one to its own project. Go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
 
 | repo | binary | project |
 |------|--------|---------|
@@ -518,7 +518,7 @@ By default the `push`, `pull_request` and `workflow_dispatch` events are allowed
 
 A `push` comes from a member or a collaborator. A `pull_request` from a fork receives no OIDC token at all, so only a same-repo PR, from a member, can authenticate. Only a user with write access to the repo can trigger a `workflow_dispatch`, which is a manual run. It therefore carries the same write-access guarantee as a `push`.
 
-Default so a PR-preview deploy works. Out of the box includes pull_request`. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
+By default so a PR-preview deploy works out of the box, `pull_request` is included. `workflow_dispatch` is included so a manual release or publish dispatch works out of the box. Set `BUILDHOST_OIDC_EVENTS=*` to allow every event type.
 
 If `BUILDHOST_OIDC_ORGS` is empty, no orgs are allowed. Use `*` to allow all orgs. Org names are matched case-insensitively (GitHub logins are), so `pazerop` and `PazerOP` are equivalent.
 

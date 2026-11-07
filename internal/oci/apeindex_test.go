@@ -24,9 +24,9 @@ const (
 	machineARM64 = 0xb7
 )
 
-// fakeAPE builds a payload with the prologue an APE carries. That is the magic
-// the detector matches, and the printf call per architecture. The trampoline
-// uses that call to write a real ELF header over its own copy.
+// fakeAPE builds a payload with the prologue an APE carries. This is the
+// magic the detector matches, and the printf call. Per architecture that the
+// trampoline uses to write a real ELF header over its own copy.
 func fakeAPE() []byte {
 	var b strings.Builder
 	b.WriteString("MZqFpD='\n")
