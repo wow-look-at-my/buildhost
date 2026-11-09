@@ -115,6 +115,7 @@ func (f *releaseFixture) follow(t *testing.T, method string, redirect *httptest.
 func (f *releaseFixture) do(t *testing.T, method, path string, header http.Header, token bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, "/"+ReleaseRoot+path, nil)
+	req.Host = ReleaseSubdomain + ".example.com"
 	for k, v := range header {
 		req.Header[k] = v
 	}
