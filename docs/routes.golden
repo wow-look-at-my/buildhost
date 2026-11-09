@@ -58,7 +58,7 @@ goproxy.{domain}/health {GET}
 goproxy.{domain}/llms.txt {GET}
 goproxy.{domain}/sumdb/{name}/{rest...} {GET}
 goproxy.{domain}/{path...} {GET,HEAD}
-mirror.{domain}/github.com/{path...} {*}
+mirror.{domain}/github.com/{owner}/{repo}/releases/download/{tag}/{asset} {GET}
 mirror.{domain}/llms.txt {GET}
 npm.{domain}/@buildhost/{project}/-/{filename} {GET}
 npm.{domain}/llms.txt {GET}
