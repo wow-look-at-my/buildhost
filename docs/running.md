@@ -15,7 +15,7 @@ The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with
 
 - The upload limits apply at once. Every other setting applies at the next start. The page marks such a setting "restart pending" and has a **Start server** button. The button shuts down gracefully and exits non-zero, so the container start policy starts the server again.
 - A change after which `Config.Validate` fails is refused. A server that cannot start takes the dashboard down with it.
-- `BUILDHOST_LISTEN_ADDR`, `BUILDHOST_ADMIN_LISTEN_ADDR`, `BUILDHOST_DATA_DIR` and `BUILDHOST_DB_PATH` stay environment only. The server needs them before the database opens, or a bad stored value locks the operator out of the dashboard.
+- The server needs them before the database opens, or a bad stored value locks the operator out of the dashboard.
 - A secret's value never goes back to the browser. It is stored in plain text in the database. A database backup holds it.
 
 ## Listing routes
@@ -24,7 +24,7 @@ The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with
 buildhost routes   # prints all registered HTTP routes, sorted
 ```
 
-Routes are printed exactly as registered. A main-domain route is path-only (`/api/v1/projects {GET,POST}`, `/healthz {GET}`). A subdomain route carries its service label and the `{domain}` host token (`apt.{domain}/{path...} {GET}`, `oci.{domain}/v2/ {*}`, `static.{domain}/file {GET}`). Nothing is synthesized at listing time. The `{domain}` token is the real host wildcard the router matches.
+Routes are printed exactly as registered. A main-domain route is path-only (`/api/v1/projects {GET,POST}`, `/healthz {GET}`). A subdomain route carries its service label and the `{domain}` host token. Nothing is synthesized at listing time. The `{domain}` token is the real host wildcard the router matches.
 
 ## Backing up the database
 
@@ -38,7 +38,7 @@ Back that directory up separately. To restore, stop the server and put the file 
 BUILDHOST_LISTEN_ADDR=:8080 buildhost serve
 ```
 
-Each service is accessed via a subdomain derived from the incoming request's `Host` header: `apt.example.com`, `brew.example.com`, `git.example.com`, `npm.example.com`, `oci.example.com` (canonical, `docker.example.com` 301-redirects), `dl.example.com`, `goproxy.example.com`, `sites.example.com`, `static.example.com`. API routes stay on the main domain. Matching the first label of the Host header against known service names require no domain configuration.
+Each service is accessed via a subdomain derived from the incoming request's `Host` header. API routes stay on the main domain. Matching the first label of the Host header against known service names require no domain configuration.
 
 Optional domain envs exist for the project-site-subdomain scheme. See `docs/sites.md`. `BUILDHOST_SITE_DOMAIN` serves each DNS-label-valid project's site at `https://<project>.<domain>/`. Unset, it adds no routes at all. `BUILDHOST_PRIMARY_DOMAIN` is the apex that carries the GitHub OAuth callback. It is the sign-in target for a private site-domain resource.
 
@@ -85,10 +85,8 @@ BUILDHOST_OTEL_ENDPOINT=https://otel.example.com buildhost serve
 
 When set, the server exports:
 
-- **Traces** to `{endpoint}/v1/traces`. Every HTTP request gets a root span. Child spans cover DB queries (`db.exec`, `db.query`, `db.query_row`), storage operations (`storage.put`, `storage.get`, `storage.delete`, `storage.exists`), auth (OIDC verification), repackaging (`repackage.generate`), and download resolution (`dl.serve_artifact`).
+- **Traces** to `{endpoint}/v1/traces`. Every HTTP request gets a root span. Child spans cover DB queries, storage operations, auth (OIDC verification), repackaging (`repackage.generate`), and download resolution (`dl.serve_artifact`).
 - **Logs** to `{endpoint}/v1/logs` -- all slog output is bridged to OTEL with trace/span correlation.
-
-Spans include attributes like `project.name`, `auth.type`, `http.method`, `url.path`, `http.status_code`, `db.statement`, `storage.key`, `storage.size`, `repackage.format`, etc.
 
 When `BUILDHOST_OTEL_ENDPOINT` is unset (default), tracing is fully disabled with zero overhead (noop tracer).
 
