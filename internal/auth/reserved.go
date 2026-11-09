@@ -1,4 +1,4 @@
-// ReservedProjectRoots are the registry mirror's prefixes on oci.{domain}/v2/.
+// ReservedProjectRoots are the mirror prefixes: oci.{domain}/v2/<root> and dl.{domain}/github.
 
 package auth
 
@@ -8,8 +8,8 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// ReservedProjectRoots are the registry mirror's prefixes on oci.{domain}/v2/.
-var ReservedProjectRoots = set.Of("dockerhub", "ghcr")
+// ReservedProjectRoots are the mirror prefixes: oci.{domain}/v2/<root> and dl.{domain}/github.
+var ReservedProjectRoots = set.Of("dockerhub", "ghcr", "github")
 
 // ReservedProjectName reports whether name sits under a reserved root.
 func ReservedProjectName(name string) bool {

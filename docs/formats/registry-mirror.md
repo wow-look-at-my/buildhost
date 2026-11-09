@@ -40,3 +40,5 @@ The mirror janitor runs every few minutes. It deletes a blob nothing read for `B
 ## Dashboard
 
 The admin dashboard's Registry Mirror page (`#/mirror`, `GET /api/mirror`) lists every tag and stored blob, the disk share, and the last janitor pass.
+
+GitHub release assets use the same storage and janitor: see `release-mirror.md`.
