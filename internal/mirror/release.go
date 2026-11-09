@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
+	"github.com/wow-look-at-my/buildhost/internal/static"
 )
 
 // ReleaseUpstream is GitHub. Its Service is the upstream column of each row.
@@ -55,6 +56,7 @@ func init() {
 		h.Client = client
 	})
 	auth.ServiceHandleRaw(ReleaseSubdomain, h.Pattern(), h.ServeHTTP)
+	static.RegisterMirror(ReleaseRoot, h)
 }
 
 // Pattern is the only shape the mirror serves.
@@ -142,12 +144,42 @@ func (h *ReleaseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if found {
-			setDisposition(w, p.asset)
-			h.serveStored(w, r, blob)
+			// After the redirect the CDN answers, so the read counts here.
+			if err := h.DB.MarkMirrorBlobRead(ctx, h.Up.Service, blob.Digest); err != nil {
+				slog.Error("mirror: mark read", "digest", blob.Digest, "err", err)
+			}
+			http.Redirect(w, r, h.StaticURL(r, blob.Digest, p.asset), http.StatusFound)
 			return
 		}
 	}
 	h.fetchAsset(w, r, p)
+}
+
+// StaticURL is the cached static.{domain}/file URL of a stored asset.
+func (h *ReleaseHandler) StaticURL(r *http.Request, digest, asset string) string {
+	return static.URL(auth.DeriveServiceURL(r, "static"), static.Params{
+		Mirror: ReleaseRoot,
+		SHA256: strings.TrimPrefix(digest, "sha256:"),
+		Name:   asset,
+	})
+}
+
+// ServeMirrored serves a stored release asset for static.{domain}/file. Only
+// a release blob answers, so the route never exposes a project artifact.
+func (h *ReleaseHandler) ServeMirrored(w http.ResponseWriter, r *http.Request, sum, name string) {
+	blob, found, err := h.stored(r.Context(), "sha256:"+sum)
+	if err != nil {
+		h.releaseFail(w, err)
+		return
+	}
+	if !found {
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, "the release mirror holds no asset with sha256 "+sum, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	setDisposition(w, name)
+	h.serveStored(w, r, blob)
 }
 
 // fetchAsset streams an asset to the client and to a temporary file at once.

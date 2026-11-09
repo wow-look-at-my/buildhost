@@ -8,7 +8,17 @@
 
 `mirror.{domain}` is the mirror's own service subdomain, so no project name is reserved. The first path segment names the upstream host.
 
-Every response carries `Cache-Control: private` and `Vary: Authorization`. The CDN caches a `.zip` or a `.tar.gz` by its extension, and a shared copy serves an anonymous caller without the token check.
+## Serving goes through static
+
+The mirror route never serves a stored asset itself. It answers `302` to the cached download endpoint:
+
+```
+https://static.{domain}/file?mirror=github.com&name=<asset>&sha256=<hex>
+```
+
+That URL names the bytes by their SHA-256, so it serves `Cache-Control: public, max-age=31536000, immutable` and the CDN keeps it. It needs no token: the bytes are public on GitHub. It answers only for a blob the release mirror holds, not for another blob in the store. An evicted digest answers `404` with `Cache-Control: no-store`, because the mirror route fetches it again and sends the client back.
+
+Every response of the mirror route itself, the 302 included, carries `Cache-Control: private` and `Vary: Authorization`. The CDN caches a `.zip` or a `.tar.gz` by its extension, and a shared copy skips the token check.
 
 ## What it serves
 
@@ -20,7 +30,7 @@ Every request needs a buildhost token with the `read` scope, sent as Bearer or a
 
 ## Storage
 
-The first request for an asset fetches it from GitHub, follows the redirect to GitHub's CDN. It streams the body to the client and to a temporary file. The file goes into the blob store under its SHA-256 when the whole body arrived. A body shorter than its `Content-Length` is not stored. A client that disconnects does not stop the fetch.
+The first request for an asset fetches it from GitHub, follows the redirect to GitHub's CDN. It streams the body to the client and to a temporary file, because nothing is in the store to redirect to yet. The file goes into the blob store under its SHA-256 when the whole body arrived. A body shorter than its `Content-Length` is not stored. A client that disconnects does not stop the fetch.
 
 The bytes are a `mirror_blobs` row with upstream `github-releases`. `mirror_release_assets` names the digest each URL gave. GitHub ignores the case of owner and repo, so the row keys them in lower case. Tag and asset keep their case.
 

@@ -203,6 +203,12 @@ func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.Hand
 	mux.HandleFunc(servicePattern(subdomain, pattern), router.Allow, requireProjectFunc(parse, handler))
 }
 
+// RequireProjectFunc wraps handler in the project check that ServiceHandle
+// applies, for a route that serves a project only on some requests.
+func RequireProjectFunc(parse ParseFunc, handler http.HandlerFunc) http.HandlerFunc {
+	return requireProjectFunc(parse, handler)
+}
+
 func ServiceHandleRaw(subdomain, pattern string, handler http.HandlerFunc) {
 	mux.HandleFunc(servicePattern(subdomain, pattern), router.Allow, handler)
 }

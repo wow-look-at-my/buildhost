@@ -146,7 +146,7 @@ curl -fL -H "Authorization: Bearer $TOKEN" -o protoc.zip \
   "__MIRROR_URL__/github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip"
 ```
 
-The first request fetches the asset from GitHub. Every later request gets the stored copy. A GitHub outage does not stop a build that downloaded the asset before. Only `releases/download/<tag>/<asset>` is served. `releases/latest/download/...` is not, because it names a different asset over time.
+The first request fetches the asset from GitHub. Every later request redirects to the cached `__STATIC_URL__/file?mirror=github.com&name=<asset>&sha256=<hex>`, so keep `-L`. A GitHub outage does not stop a build that downloaded the asset before. Only `releases/download/<tag>/<asset>` is served. `releases/latest/download/...` is not, because it names a different asset over time.
 
 ## Package managers
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -84,10 +85,31 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 	require.NoError(t, err)
 	up := newFakeGitHub(t)
 	h := &ReleaseHandler{Handler: Handler{Up: Upstream{Service: ReleaseUpstream.Service, Remote: up.URL}, DB: d, Store: store, TmpDir: t.TempDir(), Client: up.Client()}}
-	// The mirror owns its subdomain, so its pattern is the only route.
+	// The mirror's route, and static.{domain}/file as it hands a ?mirror= request to the source.
 	rt := router.New()
 	rt.HandleFunc(h.Pattern(), router.Allow, h.ServeHTTP)
+	rt.HandleFunc("GET /file", router.Allow, func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		h.ServeMirrored(w, r, q.Get("sha256"), q.Get("name"))
+	})
 	return &releaseFixture{h: h, up: up, rt: rt}
+}
+
+// follow sends the request a redirect names, with no token: the static URL needs none.
+func (f *releaseFixture) follow(t *testing.T, method string, redirect *httptest.ResponseRecorder, header http.Header) *httptest.ResponseRecorder {
+	t.Helper()
+	require.Equal(t, http.StatusFound, redirect.Code, redirect.Body.String())
+	loc, err := url.Parse(redirect.Header().Get("Location"))
+	require.NoError(t, err)
+	require.Equal(t, "static.example.com", loc.Host, "a stored asset must come from the cached static endpoint")
+	require.Equal(t, "/file", loc.Path)
+	req := httptest.NewRequest(method, loc.RequestURI(), nil)
+	for k, v := range header {
+		req.Header[k] = v
+	}
+	rec := httptest.NewRecorder()
+	f.rt.ServeHTTP(rec, req)
+	return rec
 }
 
 func (f *releaseFixture) do(t *testing.T, method, path string, header http.Header, token bool) *httptest.ResponseRecorder {
@@ -126,25 +148,34 @@ func TestReleaseMirrorRefusesWrites(t *testing.T) {
 func TestReleaseResponsesStayOutOfSharedCaches(t *testing.T) {
 	f := newReleaseFixture(t)
 	f.up.assets[protocAsset] = "zip"
-	for range 2 {
-		rec := f.do(t, http.MethodGet, protocAsset, nil, true)
-		require.Equal(t, http.StatusOK, rec.Code)
+	first := f.do(t, http.MethodGet, protocAsset, nil, true)
+	require.Equal(t, http.StatusOK, first.Code)
+	redirect := f.do(t, http.MethodGet, protocAsset, nil, true)
+	require.Equal(t, http.StatusFound, redirect.Code)
+	for _, rec := range []*httptest.ResponseRecorder{first, redirect} {
 		assert.Equal(t, "private", rec.Header().Get("Cache-Control"), "the CDN caches a .zip by extension, and a shared copy skips the token check")
 		assert.Equal(t, "Authorization", rec.Header().Get("Vary"))
 	}
+	assert.Equal(t, "public, max-age=31536000, immutable", f.follow(t, http.MethodGet, redirect, nil).Header().Get("Cache-Control"),
+		"the static URL names the content by its sha256, so the CDN may keep it")
 }
 
-func TestReleaseAssetIsFetchedOnceAndServedFromTheStore(t *testing.T) {
+func TestReleaseAssetIsFetchedOnceAndThenRedirectedToStatic(t *testing.T) {
 	f := newReleaseFixture(t)
 	body := strings.Repeat("protoc-bytes ", 1000)
 	f.up.assets[protocAsset] = body
 
-	for range 2 {
-		rec := f.do(t, http.MethodGet, protocAsset, nil, true)
-		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		assert.Equal(t, body, rec.Body.String())
-		assert.Equal(t, `attachment; filename=protoc-29.3-linux-x86_64.zip`, rec.Header().Get("Content-Disposition"))
-	}
+	rec := f.do(t, http.MethodGet, protocAsset, nil, true)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, body, rec.Body.String(), "the first request streams from GitHub")
+
+	redirect := f.do(t, http.MethodGet, protocAsset, nil, true)
+	sum := strings.TrimPrefix(digestOf(body), "sha256:")
+	assert.Equal(t, "https://static.example.com/file?mirror=github.com&name=protoc-29.3-linux-x86_64.zip&sha256="+sum, redirect.Header().Get("Location"))
+	rec = f.follow(t, http.MethodGet, redirect, nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Equal(t, body, rec.Body.String())
+	assert.Equal(t, `attachment; filename=protoc-29.3-linux-x86_64.zip`, rec.Header().Get("Content-Disposition"))
 	assert.Equal(t, 1, f.up.count(protocAsset), "a stored asset must come from the store")
 
 	digest, known, err := f.h.DB.GetMirrorReleaseAsset(t.Context(), ReleaseUpstream.Service, "protocolbuffers/protobuf", "v29.3", "protoc-29.3-linux-x86_64.zip")
@@ -152,22 +183,33 @@ func TestReleaseAssetIsFetchedOnceAndServedFromTheStore(t *testing.T) {
 	require.True(t, known)
 	assert.Equal(t, digestOf(body), digest)
 
-	rec := f.do(t, http.MethodGet, protocAsset, http.Header{"Range": {"bytes=7-11"}}, true)
+	rec = f.follow(t, http.MethodGet, redirect, http.Header{"Range": {"bytes=7-11"}})
 	assert.Equal(t, http.StatusPartialContent, rec.Code)
 	assert.Equal(t, body[7:12], rec.Body.String())
-	rec = f.do(t, http.MethodHead, protocAsset, nil, true)
+	rec = f.follow(t, http.MethodHead, redirect, nil)
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, fmt.Sprint(len(body)), rec.Header().Get("Content-Length"))
 	assert.Equal(t, 1, f.up.count(protocAsset))
+}
+
+func TestStaticAnswersOnlyForAReleaseBlob(t *testing.T) {
+	f := newReleaseFixture(t)
+	req := httptest.NewRequest(http.MethodGet, "/file?mirror=github.com&name=x.zip&sha256="+strings.Repeat("ab", 32), nil)
+	rec := httptest.NewRecorder()
+	f.rt.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code, "a digest the mirror does not hold must never serve another blob from the store")
+	assert.Equal(t, "no-store", rec.Header().Get("Cache-Control"), "the mirror route refetches an evicted asset and sends the client back, so a cached 404 breaks it")
 }
 
 func TestReleaseRepositoryCaseDoesNotFetchAgain(t *testing.T) {
 	f := newReleaseFixture(t)
 	f.up.assets[protocAsset] = "zip"
 	require.Equal(t, http.StatusOK, f.do(t, http.MethodGet, protocAsset, nil, true).Code)
-	rec := f.do(t, http.MethodGet, "/ProtocolBuffers/Protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip", nil, true)
+	redirect := f.do(t, http.MethodGet, "/ProtocolBuffers/Protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip", nil, true)
+	rec := f.follow(t, http.MethodGet, redirect, nil)
 	require.Equal(t, http.StatusOK, rec.Code, "GitHub ignores the case of owner and repo, so the mirror must too")
 	assert.Equal(t, "zip", rec.Body.String())
+	assert.Equal(t, 1, f.up.count(protocAsset))
 }
 
 func TestReleaseTagWithASlash(t *testing.T) {
