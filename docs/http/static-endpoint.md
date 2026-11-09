@@ -52,6 +52,10 @@ Read it back through the admin `GET /api/projects/{name}/downloads` (`internal/a
 
 All artifact downloads go through `static.{domain}/file?project=&v=&os=&arch=&fmt=`. It is a single CDN-cacheable endpoint with sorted query params, strong ETags and immutable cache headers. A format handler (dl, apt, brew, npm) redirects to static after it resolves the version or branch. `v=latest` returns 400, because the caller must resolve it first. A repackage format self-registers through the `Fmt` interface.
 
+## Mirrored content
+
+`static.{domain}/file?mirror=<source>&name=<file>&sha256=<hex>` serves content a mirror holds, such as a GitHub release asset. A source registers through `static.RegisterMirror`. The project check does not run for it, because no project owns the content and the SHA-256 names it exactly. The release mirror redirects here, so its assets get the same CDN caching as every artifact. Depth: `docs/formats/release-mirror.md`.
+
 ## Multi-platform artifacts
 
 Artifact lookup resolves through `artifact_platforms`. A platform covered by a single multi-platform artifact (one APE) therefore resolves to that artifact and serves its blob. The ETag comes from the artifact's storage key, so every covered platform shares one ETag. `/dl` also folds a covered platform to the artifact's canonical os and arch, so they share one URL too. Depth: `docs/multi-platform-artifacts.md`.

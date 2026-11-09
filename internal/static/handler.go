@@ -38,7 +38,19 @@ func init() {
 			RegisterRepackageFmt(format)
 		}
 	})
-	auth.ServiceHandle("static", "GET /file", parseRoute, handler.Serve)
+	auth.ServiceHandleRaw("static", "GET /file", fileHandler(auth.RequireProjectFunc(parseRoute, handler.Serve)))
+}
+
+// fileHandler sends a ?mirror= request to its mirror source, and every other
+// request through the project check to serveProject.
+func fileHandler(serveProject http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("mirror") {
+			serveMirror(w, r)
+			return
+		}
+		serveProject(w, r)
+	}
 }
 
 type route struct {
