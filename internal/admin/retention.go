@@ -163,7 +163,7 @@ func (s *Server) deletedBranches(w http.ResponseWriter, r *http.Request, enforce
 
 func (s *Server) retentionError(w http.ResponseWriter, r *http.Request, err error) {
 	slog.Error("admin api error", "err", err, "path", r.URL.Path)
-	http.Error(w, "internal error", http.StatusInternalServerError)
+	http.Error(w, err.Error(), http.StatusInternalServerError)
 }
 
 func (s *Server) retentionResponse(settings db.RetentionSettings, preview retention.Report) map[string]any {

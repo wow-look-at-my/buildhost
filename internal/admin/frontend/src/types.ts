@@ -664,10 +664,10 @@ export interface MirrorData {
     disk_free?: number;
     disk_total?: number;
     disk_used?: number;
-    upstreams: { service: string; remote: string }[];
+    upstreams: { service: string; remote: string; url: string }[];
     blobs: MirrorBlobRow[];
     tags: MirrorTagRow[];
-    release_upstream: { service: string; remote: string };
+    release_upstream: { service: string; remote: string; url: string };
     release_assets: MirrorReleaseAssetRow[];
     janitor: MirrorJanitor | null;
 }

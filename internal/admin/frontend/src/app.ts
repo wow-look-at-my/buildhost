@@ -109,7 +109,9 @@ const demoFetch = function <T>(path: string): T {
 const apiFetch = function <T>(path: string): Promise<T> {
     if (demo) return Promise.resolve().then(function () { return demoFetch<T>(path); });
     return fetch("/api" + path).then(function (r) {
-        if (!r.ok) throw new Error("GET /api" + path + ": HTTP " + r.status);
+        if (!r.ok) return r.text().then(function (t) {
+            throw new Error("GET /api" + path + ": HTTP " + r.status + (t.trim() ? ": " + t.trim() : ""));
+        });
         return r.json();
     });
 };
@@ -1750,13 +1752,13 @@ const demoMirror = function (): MirrorData {
         disk_total: 500_000_000_000,
         disk_used: 438_000_000_000,
         disk_free: 62_000_000_000,
-        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io" }, { service: "ghcr", remote: "https://ghcr.io" }],
+        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io", url: "https://oci.builds.example.com/v2/dockerhub/" }, { service: "ghcr", remote: "https://ghcr.io", url: "https://oci.builds.example.com/v2/ghcr/" }],
         blobs: blobs,
         tags: [
             { upstream: "dockerhub", repository: "library/alpine", tag: "latest", digest: digest("a1pine"), media_type: "application/vnd.oci.image.index.v1+json", checked_at: ago(0.1) },
             { upstream: "ghcr", repository: "actions/actions-runner", tag: "2.330.0", digest: digest("runner"), media_type: "application/vnd.oci.image.manifest.v1+json", checked_at: ago(2) }
         ],
-        release_upstream: { service: "github-releases", remote: "https://github.com" },
+        release_upstream: { service: "github-releases", remote: "https://github.com", url: "https://mirror.builds.example.com/github.com/<owner>/<repo>/releases/download/<tag>/<asset>" },
         release_assets: [
             { repository: "protocolbuffers/protobuf", tag: "v29.3", asset: "protoc-29.3-linux-x86_64.zip", digest: digest("pr0toc"), created_at: ago(30) }
         ],
@@ -2562,11 +2564,11 @@ const renderMirror = function (d: MirrorData): void {
         reads += b.reads;
     }
     const keepDays = Math.round(d.keep_seconds / 86400);
-    const hosts = d.upstreams.map((u) => "<code>" + h(u.service) + ".</code> fronts " + h(u.remote)).join(", ");
+    const hosts = d.upstreams.map((u) => "<code>" + h(u.url) + "</code> fronts " + h(u.remote)).join(", ");
     let html = "<h1>Registry Mirror</h1>";
     html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
         "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
-        "<code>mirror./github.com/&lt;owner&gt;/&lt;repo&gt;/releases/download/&lt;tag&gt;/&lt;asset&gt;</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
+        "<code>" + h(d.release_upstream.url) + "</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
         "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
     html += '<div class="rf-kpis">' +
         kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(d.release_assets.length, "release assets") +

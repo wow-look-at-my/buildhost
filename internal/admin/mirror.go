@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/wow-look-at-my/buildhost/internal/auth"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
 	"github.com/wow-look-at-my/buildhost/internal/mirror"
 )
@@ -42,6 +43,8 @@ type mirrorReleaseAssetRow struct {
 type mirrorUpstreamRow struct {
 	Service string `json:"service"`
 	Remote  string `json:"remote"`
+	// URL is where a client reaches this upstream through buildhost.
+	URL string `json:"url"`
 }
 
 // apiMirror lists what the registry mirror holds, and when the janitor deletes each blob unless a pull reads it again.
@@ -83,7 +86,7 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 	}
 	upstreams := make([]mirrorUpstreamRow, len(mirror.Upstreams))
 	for idx, u := range mirror.Upstreams {
-		upstreams[idx] = mirrorUpstreamRow{Service: u.Service, Remote: u.Remote}
+		upstreams[idx] = mirrorUpstreamRow{Service: u.Service, Remote: u.Remote, URL: auth.DeriveServiceURL(r, "oci").String() + "/v2/" + u.Service + "/"}
 	}
 	resp := map[string]any{
 		"keep_seconds":           int64(s.cfg.MirrorKeep / time.Second),
@@ -94,7 +97,8 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 		"upstreams":              upstreams,
 		"blobs":                  blobRows,
 		"tags":                   tagRows,
-		"release_upstream":       mirrorUpstreamRow{Service: mirror.ReleaseUpstream.Service, Remote: mirror.ReleaseUpstream.Remote},
+		"release_upstream": mirrorUpstreamRow{Service: mirror.ReleaseUpstream.Service, Remote: mirror.ReleaseUpstream.Remote,
+			URL: auth.DeriveServiceURL(r, "mirror").String() + "/github.com/<owner>/<repo>/releases/download/<tag>/<asset>"},
 		"release_assets":         assetRows,
 		"janitor":                mirror.LastReport(),
 	}
