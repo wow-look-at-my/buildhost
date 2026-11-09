@@ -17,7 +17,7 @@ var templateMD string
 var handler Handler
 
 // The services that serve their own copy of the guide.
-var serviceSubdomains = set.Of[string]("apt", "brew", "dl", "git", "goproxy", "npm", "oci", "sites", "static")
+var serviceSubdomains = set.Of[string]("apt", "brew", "dl", "git", "goproxy", "mirror", "npm", "oci", "sites", "static")
 
 func init() {
 	auth.HandleRaw("GET /llms.txt", handler.Serve)

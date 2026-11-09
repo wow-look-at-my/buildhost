@@ -324,3 +324,16 @@ CREATE TABLE mirror_tags (
     checked_at  DATETIME NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (upstream, repository, tag)
 );
+
+-- The blob each GitHub release asset URL gave. The bytes are a row in mirror_blobs.
+CREATE TABLE mirror_release_assets (
+    upstream    TEXT NOT NULL,
+    repository  TEXT NOT NULL,
+    tag         TEXT NOT NULL,
+    asset       TEXT NOT NULL,
+    digest      TEXT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (upstream, repository, tag, asset)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mirror_release_assets_digest ON mirror_release_assets(upstream, digest);
