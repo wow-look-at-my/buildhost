@@ -4,13 +4,13 @@
 
 | GitHub | Mirror |
 | --- | --- |
-| `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` | `https://dl.{domain}/github/<owner>/<repo>/releases/download/<tag>/<asset>` |
+| `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` | `https://dl.{domain}/github.com/<owner>/<repo>/releases/download/<tag>/<asset>` |
 
-`github` is a reserved project root (`auth.ReservedProjectRoots`). The mirror owns every path under `dl.{domain}/github/`.
+`github.com` is a reserved project root (`auth.ReservedProjectRoots`). The mirror owns every path under `dl.{domain}/github.com/`. The root is not `github`, because a `.github` repository publishes as project `github`.
 
 ## What it serves
 
-`GET` and `HEAD` on `/github/<owner>/<repo>/releases/download/<tag>/<asset>`. A tag can hold a slash: the asset is the last segment. Every other method answers 405. `releases/latest/download/...` and source archives answer 404. A `latest` URL names a different asset over time, and the mirror stores an asset once.
+`GET` and `HEAD` on `/github.com/<owner>/<repo>/releases/download/<tag>/<asset>`. A tag can hold a slash: the asset is the last segment. Every other method answers 405. `releases/latest/download/...` and source archives answer 404. A `latest` URL names a different asset over time, and the mirror stores an asset once.
 
 ## Auth
 

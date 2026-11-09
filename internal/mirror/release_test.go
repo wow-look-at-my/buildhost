@@ -93,7 +93,7 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 
 func (f *releaseFixture) do(t *testing.T, method, path string, header http.Header, token bool) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, "/github"+path, nil)
+	req := httptest.NewRequest(method, "/"+ReleaseRoot+path, nil)
 	for k, v := range header {
 		req.Header[k] = v
 	}

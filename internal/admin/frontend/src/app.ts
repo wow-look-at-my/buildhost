@@ -2511,7 +2511,7 @@ const renderMirror = function (d: MirrorData): void {
     let html = "<h1>Registry Mirror</h1>";
     html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
         "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
-        "<code>dl./github/&lt;owner&gt;/&lt;repo&gt;/releases/download/&lt;tag&gt;/&lt;asset&gt;</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
+        "<code>dl./github.com/&lt;owner&gt;/&lt;repo&gt;/releases/download/&lt;tag&gt;/&lt;asset&gt;</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
         "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
     html += '<div class="rf-kpis">' +
         kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(d.release_assets.length, "release assets") +
