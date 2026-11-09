@@ -124,6 +124,8 @@ func TestEvictReleases_SharedBlobAndCascade(t *testing.T) {
 	require.NoError(t, d.UpdateArtifactStripped(ctx, a1.ID, "strip1", 50, "s1", "dbg1", 30))
 	require.NoError(t, d.CreatePackagedArtifact(ctx, a1.ID, "deb", "pkg1", 70, "p1", "f.deb", "{}"))
 	require.NoError(t, d.IncrementDownloadCount(ctx, a1.ID))
+	// A download event references the artifact. Eviction must delete it, or the foreign key refuses the artifact delete.
+	require.NoError(t, d.RecordDownloadEvent(ctx, a1.ID, "raw", "203.0.113.7", "curl/8.5.0", ""))
 	require.NoError(t, d.SetOCITag(ctx, p.ID, "v1tag", "sha256:x", r1.ID))
 
 	// r2 shares the "shared" blob (identical content, deduplicated).

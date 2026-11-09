@@ -152,6 +152,9 @@ func deleteReleaseRows(ctx context.Context, q *Queries, releaseID int64) error {
 	if err := q.DeleteReleasePackagedArtifacts(ctx, releaseID); err != nil {
 		return fmt.Errorf("delete packaged artifacts: %w", err)
 	}
+	if err := q.DeleteReleaseDownloadEvents(ctx, releaseID); err != nil {
+		return fmt.Errorf("delete download events: %w", err)
+	}
 	if err := q.DeleteReleaseDownloadCounts(ctx, releaseID); err != nil {
 		return fmt.Errorf("delete download counts: %w", err)
 	}

@@ -28,6 +28,15 @@ func (q *Queries) DeleteReleaseDownloadCounts(ctx context.Context, releaseID int
 	return err
 }
 
+const deleteReleaseDownloadEvents = `-- name: DeleteReleaseDownloadEvents :exec
+DELETE FROM download_events WHERE artifact_id IN (SELECT id FROM artifacts WHERE release_id = ?)
+`
+
+func (q *Queries) DeleteReleaseDownloadEvents(ctx context.Context, releaseID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteReleaseDownloadEvents, releaseID)
+	return err
+}
+
 const deleteReleaseOCITags = `-- name: DeleteReleaseOCITags :exec
 DELETE FROM oci_tags WHERE release_id = ?
 `

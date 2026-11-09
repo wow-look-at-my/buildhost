@@ -24,6 +24,10 @@ type settingRow struct {
 	Set            bool   `json:"set"`
 	Source         string `json:"source"`
 	RestartPending bool   `json:"restart_pending"`
+	// Fingerprint identifies a stored key without its value, as GitHub shows it.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	// Problem says why a set value cannot work.
+	Problem string `json:"problem,omitempty"`
 }
 
 func settingRows() []settingRow {
@@ -31,8 +35,15 @@ func settingRows() []settingRow {
 	for _, st := range config.Settings {
 		v := config.Getenv(st.Name)
 		row := settingRow{Setting: st, Set: v != "", Source: config.Source(st.Name), RestartPending: config.RestartPending(st)}
-		if st.Kind != config.KindSecret {
+		if !st.Secret() {
 			row.Value = v
+		}
+		if st.Name == config.GitHubAppKeySetting && strings.TrimSpace(v) != "" {
+			if key, err := config.ParseGitHubAppKey(v); err != nil {
+				row.Problem = err.Error()
+			} else {
+				row.Fingerprint = config.KeyFingerprint(key)
+			}
 		}
 		rows = append(rows, row)
 	}
@@ -49,7 +60,7 @@ func (s *Server) apiSettings(w http.ResponseWriter, _ *http.Request) {
 }
 
 // apiSetSetting (PUT /api/settings/{name}) stores {"value": "..."}. An empty
-// value removes the stored value, as DELETE does.
+// value is stored too, and overrides the environment. DELETE falls back to the environment.
 func (s *Server) apiSetSetting(w http.ResponseWriter, r *http.Request) {
 	st, ok := config.LookupSetting(r.PathValue("name"))
 	if !ok {
@@ -68,12 +79,11 @@ func (s *Server) apiSetSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value := *body.Value
-	if st.Kind != config.KindSecret {
+	if !st.Secret() || st.Kind == config.KindPEM {
 		value = strings.TrimSpace(value)
 	}
 	if strings.TrimSpace(value) == "" {
-		s.deleteSetting(w, r, st)
-		return
+		value = ""
 	}
 	if err := s.checkStartup(r, st.Name, &value); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

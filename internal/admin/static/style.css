@@ -164,6 +164,25 @@ code {
 	transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
+.nav-list .nav-group {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 23px;
+	color: var(--text-muted);
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.nav-list .nav-group svg {
+	flex-shrink: 0;
+	opacity: 0.7;
+}
+
+.nav-list .nav-sub a {
+	padding-left: 38px;
+}
+
 .nav-list li a:hover {
 	background: var(--sidebar-hover);
 	color: var(--text-bright);
@@ -962,7 +981,36 @@ copy-btn {
 
 .settings-form {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
+}
+
+.settings-check {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+}
+
+.settings-error {
+	flex-basis: 100%;
+}
+
+.settings-form-pem {
+	flex-direction: column;
+}
+
+.settings-form-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.settings-pem {
+	font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+	font-size: 12px;
+	white-space: pre;
+	resize: vertical;
 }
 
 .settings-form .form-input {
