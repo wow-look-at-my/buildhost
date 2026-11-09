@@ -115,6 +115,15 @@ type MirrorBlob struct {
 	Reads      int64     `json:"reads"`
 }
 
+type MirrorReleaseAsset struct {
+	Upstream   string    `json:"upstream"`
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Asset      string    `json:"asset"`
+	Digest     string    `json:"digest"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type MirrorTag struct {
 	Upstream   string    `json:"upstream"`
 	Repository string    `json:"repository"`
