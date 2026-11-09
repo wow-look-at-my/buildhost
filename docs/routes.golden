@@ -46,6 +46,7 @@ brew.{domain}/tap.git/git-upload-pack {POST}
 brew.{domain}/tap.git/info/refs {GET}
 brew.{domain}/tap.git/{path...} {GET}
 brew.{domain}/{project} {GET}
+dl.{domain}/github.com/{path...} {*}
 dl.{domain}/llms.txt {GET}
 dl.{domain}/{project} {GET}
 docker.{domain}/{path...} {*}
