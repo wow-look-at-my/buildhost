@@ -46,7 +46,6 @@ brew.{domain}/tap.git/git-upload-pack {POST}
 brew.{domain}/tap.git/info/refs {GET}
 brew.{domain}/tap.git/{path...} {GET}
 brew.{domain}/{project} {GET}
-dl.{domain}/github.com/{path...} {*}
 dl.{domain}/llms.txt {GET}
 dl.{domain}/{project} {GET}
 docker.{domain}/{path...} {*}
@@ -59,6 +58,8 @@ goproxy.{domain}/health {GET}
 goproxy.{domain}/llms.txt {GET}
 goproxy.{domain}/sumdb/{name}/{rest...} {GET}
 goproxy.{domain}/{path...} {GET,HEAD}
+mirror.{domain}/github.com/{path...} {*}
+mirror.{domain}/llms.txt {GET}
 npm.{domain}/@buildhost/{project}/-/{filename} {GET}
 npm.{domain}/llms.txt {GET}
 npm.{domain}/{pkg} {GET}
