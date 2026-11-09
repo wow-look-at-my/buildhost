@@ -13,11 +13,23 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// Config controls retention policy. KeepN published releases are kept on each
+// Config is the retention policy. docs/retention.md describes each field.
 type Config struct {
 	KeepN        int
+	BranchKeepN  int
+	BranchTTL    time.Duration
 	RecencyGuard time.Duration
 	Enforce      bool
+}
+
+// Policy resolves the config against now into the cutoffs the queries take.
+func (c Config) Policy(now time.Time) db.EvictionPolicy {
+	return db.EvictionPolicy{
+		KeepN:           int64(c.KeepN),
+		BranchKeepN:     int64(c.BranchKeepN),
+		RecencyCutoff:   now.Add(-c.RecencyGuard),
+		BranchTTLCutoff: now.Add(-c.BranchTTL),
+	}
 }
 
 // Retention is the eviction engine shared by the background sweeper, the gc CLI,
@@ -28,6 +40,7 @@ type Retention struct {
 	cfg           Config
 	clock         func() time.Time
 	recordDeleter RecordDeleter
+	branches      BranchLister
 }
 
 func New(database *db.DB, store storage.Storage, cfg Config) *Retention {
@@ -45,6 +58,8 @@ func (r *Retention) WithRecordDeleter(d RecordDeleter) *Retention {
 func ConfigFromSettings(s db.RetentionSettings, enforce bool) Config {
 	return Config{
 		KeepN:        s.KeepN,
+		BranchKeepN:  s.BranchKeepN,
+		BranchTTL:    time.Duration(s.BranchTTLDays) * 24 * time.Hour,
 		RecencyGuard: time.Duration(s.RecencyHours) * time.Hour,
 		Enforce:      enforce,
 	}
@@ -74,6 +89,8 @@ type Report struct {
 	ReclaimableBytes  int64        // exact bytes freed / that would be freed
 	FreedBlobs        []BlobRef    // the blobs ReclaimableBytes sums, keyed by storage key
 
+	BranchSync BranchSync // what the pre-run sync of deleted branches changed
+
 	DeletedBranchReleases []ReleaseRef  // on a branch GitHub confirms is gone
 	BranchChecks          []BranchCheck // every branch the deleted-branch pass asked GitHub about
 
@@ -96,13 +113,20 @@ func (r *Retention) Run(ctx context.Context) (Report, error) { return r.run(ctx,
 
 func (r *Retention) run(ctx context.Context, enforce bool) (Report, error) {
 	rep := Report{Enforced: enforce}
-	cutoff := r.clock().Add(-r.cfg.RecencyGuard)
+	if r.branches != nil {
+		sync, err := r.SyncDeletedBranches(ctx)
+		rep.BranchSync = sync
+		if err != nil {
+			return rep, fmt.Errorf("sync deleted branches: %w", err)
+		}
+	}
+	policy := r.cfg.Policy(r.clock())
 
-	abandoned, err := r.db.ListAbandonedReleases(ctx, cutoff)
+	abandoned, err := r.db.ListAbandonedReleases(ctx, policy.RecencyCutoff)
 	if err != nil {
 		return rep, fmt.Errorf("list abandoned releases: %w", err)
 	}
-	evictable, err := r.db.ListEvictableReleases(ctx, int64(r.cfg.KeepN), cutoff)
+	evictable, err := r.db.ListEvictableReleases(ctx, policy)
 	if err != nil {
 		return rep, fmt.Errorf("list evictable releases: %w", err)
 	}
