@@ -23,7 +23,8 @@ func TestGitHubAppProblem(t *testing.T) {
 		{name: "both", id: "123", key: goodPEM},
 		{name: "id only", id: "123", key: "", wantErr: "BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty"},
 		{name: "key only", id: "", key: goodPEM, wantErr: "BUILDHOST_GITHUB_APP_ID is empty"},
-		{name: "bad key", id: "123", key: "not a pem", wantErr: "not an RSA private key"},
+		{name: "bad key", id: "123", key: "not a pem", wantErr: "want the PEM text"},
+		{name: "broken pem", id: "123", key: "-----BEGIN RSA PRIVATE KEY-----\nAAAA\n-----END RSA PRIVATE KEY-----", wantErr: "not an RSA private key"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

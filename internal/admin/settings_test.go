@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -98,7 +99,7 @@ func TestAPISettingsAppKey(t *testing.T) {
 	w = put("-----BEGIN RSA PRIVATE KEY-----garbage-----END RSA PRIVATE KEY-----")
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Contains(t, w.Body.String(), "not an RSA private key")
-	assert.Equal(t, good, config.Getenv(config.GitHubAppKeySetting), "a refused key leaves the stored key as it was")
+	assert.Equal(t, strings.TrimSpace(good), config.Getenv(config.GitHubAppKeySetting), "a refused key leaves the stored key as it was")
 }
 
 func TestAPISettingsStoresAnEmptyOverride(t *testing.T) {
