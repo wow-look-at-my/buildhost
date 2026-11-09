@@ -1,5 +1,5 @@
 // The release mirror serves GitHub release assets under GitHub's own path:
-// dl.{domain}/github.com/<owner>/<repo>/releases/download/<tag>/<asset>.
+// mirror.{domain}/github.com/<owner>/<repo>/releases/download/<tag>/<asset>.
 // An asset comes from GitHub once and from the blob store after that.
 
 package mirror
@@ -26,9 +26,9 @@ import (
 var ReleaseUpstream = Upstream{Service: "github-releases", Remote: "https://github.com"}
 
 const (
-	// ReleaseSubdomain is the service the release mirror shares with downloads.
-	ReleaseSubdomain = "dl"
-	// ReleaseRoot is the first path segment. It is a reserved project root.
+	// ReleaseSubdomain is the release mirror's own service. No project route shares it.
+	ReleaseSubdomain = "mirror"
+	// ReleaseRoot is the first path segment: the upstream host.
 	ReleaseRoot = "github.com"
 )
 
@@ -117,8 +117,11 @@ func parseReleasePath(p string) (releasePath, bool) {
 	return releasePath{repository: owner + "/" + repo, tag: tag, asset: asset}, true
 }
 
-// ServeHTTP serves every path under dl.{domain}/github.com/.
+// ServeHTTP serves every path under mirror.{domain}/github.com/.
 func (h *ReleaseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The CDN caches a .zip or a .tar.gz by its extension.
+	w.Header().Set("Cache-Control", "private")
+	w.Header().Set("Vary", "Authorization")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "the release mirror is read-only", http.StatusMethodNotAllowed)

@@ -147,7 +147,7 @@ func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 // cachedServiceLabels are the service subdomains that a CDN caches.
 var cachedServiceLabels = set.Of(
 	"apt", "brew", "dl", "docker", "git",
-	"goproxy", "npm", "oci", "sites", "static",
+	"goproxy", "mirror", "npm", "oci", "sites", "static",
 )
 
 // IsCachedContentHost reports whether host (port allowed) is a service

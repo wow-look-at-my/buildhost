@@ -4,9 +4,11 @@
 
 | GitHub | Mirror |
 | --- | --- |
-| `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` | `https://dl.{domain}/github.com/<owner>/<repo>/releases/download/<tag>/<asset>` |
+| `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>` | `https://mirror.{domain}/github.com/<owner>/<repo>/releases/download/<tag>/<asset>` |
 
-`github.com` is a reserved project root (`auth.ReservedProjectRoots`). The mirror owns every path under `dl.{domain}/github.com/`. The root is not `github`, because a `.github` repository publishes as project `github`.
+`mirror.{domain}` is the mirror's own service subdomain, so no project name is reserved. The first path segment names the upstream host.
+
+Every response carries `Cache-Control: private` and `Vary: Authorization`. The CDN caches a `.zip` or a `.tar.gz` by its extension, and a shared copy serves an anonymous caller without the token check.
 
 ## What it serves
 

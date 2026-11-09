@@ -139,11 +139,11 @@ Every download request redirects to the unified, cacheable static endpoint `__ST
 
 ### GitHub release assets
 
-The download service mirrors public GitHub release assets under GitHub's own path. Put `__DL_URL__/` in front of `github.com`, and send a read-scoped token:
+The mirror service holds public GitHub release assets under GitHub's own path. Put `__MIRROR_URL__/` in front of `github.com`, and send a read-scoped token:
 
 ```
 curl -fL -H "Authorization: Bearer $TOKEN" -o protoc.zip \
-  "__DL_URL__/github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip"
+  "__MIRROR_URL__/github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip"
 ```
 
 The first request fetches the asset from GitHub. Every later request gets the stored copy. A GitHub outage does not stop a build that downloaded the asset before. Only `releases/download/<tag>/<asset>` is served. `releases/latest/download/...` is not, because it names a different asset over time.

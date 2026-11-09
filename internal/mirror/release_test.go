@@ -124,8 +124,15 @@ func TestReleaseMirrorRefusesWrites(t *testing.T) {
 	}
 }
 
-func TestReleaseRootIsAReservedProjectRoot(t *testing.T) {
-	assert.True(t, auth.ReservedProjectName(ReleaseRoot+"/x"), "a project named %s would collide with the release mirror", ReleaseRoot)
+func TestReleaseResponsesStayOutOfSharedCaches(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.up.assets[protocAsset] = "zip"
+	for range 2 {
+		rec := f.do(t, http.MethodGet, protocAsset, nil, true)
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "private", rec.Header().Get("Cache-Control"), "the CDN caches a .zip by extension, and a shared copy skips the token check")
+		assert.Equal(t, "Authorization", rec.Header().Get("Vary"))
+	}
 }
 
 func TestReleaseAssetIsFetchedOnceAndServedFromTheStore(t *testing.T) {
