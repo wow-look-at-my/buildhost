@@ -28,6 +28,7 @@ import type {
     CacheEntryRow,
     MirrorBlobRow,
     MirrorData,
+    MirrorReleaseAssetRow,
     MirrorTagRow,
     ServiceURLs,
     SettingRow,
@@ -1735,7 +1736,8 @@ const demoMirror = function (): MirrorData {
         blob("dockerhub", "a1pine", "application/vnd.oci.image.index.v1+json", 9_218, 50, 0.1, 212),
         blob("dockerhub", "a1pine1ayer", "", 3_640_000, 50, 0.1, 212),
         blob("ghcr", "runner", "application/vnd.oci.image.manifest.v1+json", 2_104, 20, 2, 33),
-        blob("ghcr", "runner1ayer", "", 210_000_000, 20, 2, 33)
+        blob("ghcr", "runner1ayer", "", 210_000_000, 20, 2, 33),
+        blob("github-releases", "pr0toc", "", 3_200_000, 30, 0.5, 48)
     ];
     let total = 0;
     for (const b of blobs) total += b.size;
@@ -1753,6 +1755,10 @@ const demoMirror = function (): MirrorData {
         tags: [
             { upstream: "dockerhub", repository: "library/alpine", tag: "latest", digest: digest("a1pine"), media_type: "application/vnd.oci.image.index.v1+json", checked_at: ago(0.1) },
             { upstream: "ghcr", repository: "actions/actions-runner", tag: "2.330.0", digest: digest("runner"), media_type: "application/vnd.oci.image.manifest.v1+json", checked_at: ago(2) }
+        ],
+        release_upstream: { service: "github-releases", remote: "https://github.com" },
+        release_assets: [
+            { repository: "protocolbuffers/protobuf", tag: "v29.3", asset: "protoc-29.3-linux-x86_64.zip", digest: digest("pr0toc"), created_at: ago(30) }
         ],
         janitor: { at: ago(0.06), duration_ms: 12, deferred: false, blobs: 5, expired: 1, pressure_deleted: 0, freed_bytes: 52_000_000 }
     };
@@ -2505,9 +2511,11 @@ const renderMirror = function (d: MirrorData): void {
     let html = "<h1>Registry Mirror</h1>";
     html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
         "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
+        "<code>mirror./github.com/&lt;owner&gt;/&lt;repo&gt;/releases/download/&lt;tag&gt;/&lt;asset&gt;</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
         "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
     html += '<div class="rf-kpis">' +
-        kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
+        kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(d.release_assets.length, "release assets") +
+        kpi(humanSize(d.total_bytes), "stored") + kpi(reads, "reads") +
         "</div>";
     html += mirrorJanitorLine(d);
     html += '<section class="rf-panel"><h2>Disk</h2>' +
@@ -2515,6 +2523,9 @@ const renderMirror = function (d: MirrorData): void {
     html += d.tags.length
         ? '<section class="rf-panel"><h2>Tags</h2><data-table id="mirror-tags"></data-table></section>'
         : '<section class="rf-panel"><p class="empty">No tag was pulled through the mirror.</p></section>';
+    html += d.release_assets.length
+        ? '<section class="rf-panel"><h2>Release assets</h2><data-table id="mirror-release-assets"></data-table></section>'
+        : '<section class="rf-panel"><p class="empty">No GitHub release asset was downloaded through the mirror.</p></section>';
     html += d.blobs.length
         ? '<section class="rf-panel"><h2>Stored</h2><data-table id="mirror-blobs"></data-table></section>'
         : '<section class="rf-panel"><p class="empty">The mirror stores nothing.</p></section>';
@@ -2555,6 +2566,20 @@ const fillMirrorTables = function (d: MirrorData): void {
         tags.rowId = (t) => t.upstream + "|" + t.repository + "|" + t.tag;
         tags.sort = { key: "checked", dir: "desc" };
         tags.rows = d.tags;
+    }
+    const assets = document.getElementById("mirror-release-assets") as DataTableElement<MirrorReleaseAssetRow> | null;
+    if (assets) {
+        assets.columns = [
+            { key: "repository", label: "Repository", value: (a) => a.repository },
+            { key: "tag", label: "Tag", value: (a) => a.tag },
+            { key: "asset", label: "Asset", value: (a) => a.asset },
+            { key: "digest", label: "Digest", value: (a) => a.digest, render: (a) => short(a.digest) },
+            { key: "fetched", label: "Fetched", value: (a) => ms(a.created_at), render: (a) => ago(a.created_at), text: (a) => a.created_at }
+        ];
+        assets.facets = [{ key: "repository", label: "repository", of: (a) => a.repository }];
+        assets.rowId = (a) => a.repository + "|" + a.tag + "|" + a.asset;
+        assets.sort = { key: "fetched", dir: "desc" };
+        assets.rows = d.release_assets;
     }
     const blobs = document.getElementById("mirror-blobs") as DataTableElement<MirrorBlobRow> | null;
     if (blobs) {

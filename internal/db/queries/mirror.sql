@@ -41,3 +41,23 @@ ORDER BY upstream, repository, tag;
 -- name: DeleteMirrorTagsForDigest :exec
 -- A tag that names an evicted manifest gives a later pull nothing to use.
 DELETE FROM mirror_tags WHERE upstream = ? AND digest = ?;
+
+-- name: GetMirrorReleaseAsset :one
+SELECT digest FROM mirror_release_assets
+WHERE upstream = ? AND repository = ? AND tag = ? AND asset = ?;
+
+-- name: UpsertMirrorReleaseAsset :exec
+INSERT INTO mirror_release_assets (upstream, repository, tag, asset, digest)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (upstream, repository, tag, asset) DO UPDATE SET
+    digest     = excluded.digest,
+    created_at = datetime('now');
+
+-- name: ListMirrorReleaseAssets :many
+SELECT upstream, repository, tag, asset, digest, created_at
+FROM mirror_release_assets
+ORDER BY upstream, repository, tag, asset;
+
+-- name: DeleteMirrorReleaseAssetsForDigest :exec
+-- An asset that names an evicted blob gives a later download nothing to use.
+DELETE FROM mirror_release_assets WHERE upstream = ? AND digest = ?;
