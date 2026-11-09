@@ -30,12 +30,26 @@ shared:
 			auth -X PUT --data-binary "@$STRIP_FIXTURE" \
 				"$BASE/api/v1/projects/image-strip-e2e/releases/$VERSION/artifacts/linux/amd64?kind=binary" >/dev/null
 			auth -X POST "$BASE/api/v1/projects/image-strip-e2e/releases/$VERSION/publish" >/dev/null
+
+			# The fat APE this build produced. UPX cannot pack one without turning it into
+			# a plain ELF, so the download must come back as the upload.
+			APE="$REPO/build/buildhost"
+			if [ ! -f "$APE" ]; then echo "the build produced no APE at $APE" >&2; exit 1; fi
+			auth -X POST "$BASE/api/v1/projects" -H 'Content-Type: application/json' \
+			-d '{"name":"image-ape-e2e","versioning":"auto","is_private":false}' >/dev/null
+			APE_VERSION="$(auth -X POST "$BASE/api/v1/projects/image-ape-e2e/releases" \
+			-H 'Content-Type: application/json' -d '{"git_branch":"master"}' | jq -r .version)"
+			auth -X PUT --data-binary "@$APE" \
+			"$BASE/api/v1/projects/image-ape-e2e/releases/$APE_VERSION/artifacts/linux/amd64?kind=binary" >/dev/null
+			auth -X POST "$BASE/api/v1/projects/image-ape-e2e/releases/$APE_VERSION/publish" >/dev/null
 			# Quoted, because a test SOURCES this file and the query string
 			# carries '&' -- unquoted, the shell backgrounds the assignment
 			# and every value after it is unset.
 			{
 				echo "STATIC='$STATIC'"
 				echo "QUERY='project=image-strip-e2e&v=$VERSION&os=linux&arch=amd64'"
+				echo "APE_QUERY='project=image-ape-e2e&v=$APE_VERSION&os=linux&arch=amd64'"
+				echo "APE='$APE'"
 				echo "FIXTURE='$STRIP_FIXTURE'"
 				echo "WORK='$WORK'"
 			} > "$ENV_FILE"
@@ -64,27 +78,41 @@ tests:
 		stdout:
 			- "stripped"
 
-	# Checked against the SECTION TABLE, not by searching for the string. The
-	# section-name string table keeps every name it ever held. So ".debug_info"
-	# is still present as BYTES in a correctly stripped file.
-	- desc: the stripped download is a usable ELF with its debug sections gone
+	# UPX replaces an ELF's section table, so the section list is not the proof
+	# here. The packer signature is, and the symbols endpoint below still proves
+	# the debug sections were separated from the binary that was packed.
+	- desc: the identity download is a packed ELF
 	  cmd: |
 		set -eu
 		. {shared.env}
 		cd "$(mktemp -d)"
 		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
 		test "$(head -c 4 out.bin | od -An -tx1 | tr -d ' \n')" = "7f454c46"
-		sh {shared.sections.sh} out.bin > sections.txt
-		for gone in .symtab .debug_info .debug_line; do
-			if grep -qx -- "$gone" sections.txt; then echo "still has $gone" >&2; exit 1; fi
-		done
-		for want in .text .rodata; do
-			grep -qx -- "$want" sections.txt || { echo "lost $want -- it could not run" >&2; exit 1; }
-		done
-		echo "elf-stripped-clean"
+		grep -aq 'UPX!' out.bin || { echo "the download is not UPX-packed" >&2; exit 1; }
+		echo "elf-packed"
 	  outputs:
 		stdout:
-			- "elf-stripped-clean"
+			- "elf-packed"
+
+	# gzip and the identity response must decode to the same bytes, and the brotli
+	# body must be smaller than the identity one.
+	- desc: every transfer coding decodes to the served payload
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cd "$(mktemp -d)"
+		curl -fsSL -o identity.bin "$STATIC/file?$QUERY&fmt=raw"
+		curl -fsSL -H 'Accept-Encoding: gzip' -o gz.bin "$STATIC/file?$QUERY&fmt=raw"
+		test "$(curl -fsSL -D - -o /dev/null -H 'Accept-Encoding: gzip' "$STATIC/file?$QUERY&fmt=raw" | tr -d '\r' | sed -n 's/^[Cc]ontent-[Ee]ncoding: *//p')" = "gzip"
+		gzip -dc gz.bin > gz-decoded.bin
+		cmp identity.bin gz-decoded.bin
+		curl -fsSL -D br-headers.txt -o br.bin -H 'Accept-Encoding: br' "$STATIC/file?$QUERY&fmt=raw"
+		test "$(tr -d '\r' < br-headers.txt | sed -n 's/^[Cc]ontent-[Ee]ncoding: *//p')" = "br"
+		test "$(wc -c < br.bin)" -lt "$(wc -c < identity.bin)"
+		echo "codings-agree"
+	  outputs:
+		stdout:
+			- "codings-agree"
 
 	- desc: the header advertises symbols for this artifact
 	  cmd: |
@@ -120,3 +148,35 @@ tests:
 	  outputs:
 		stdout:
 			- "bytes-identical"
+
+	# The identity download is stripped and packed in the image, and it must
+	# still be the same program. The fixture prints one line, so running both
+	# files compares the served bytes against the upload.
+	- desc: the identity download runs and prints what the upload prints
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cd "$(mktemp -d)"
+		curl -fsSL -o out.bin "$STATIC/file?$QUERY&fmt=raw"
+		chmod +x out.bin
+		"$FIXTURE" > uploaded.txt
+		./out.bin > downloaded.txt
+		cmp uploaded.txt downloaded.txt
+		echo "download-runs"
+	  outputs:
+		stdout:
+			- "download-runs"
+
+	- desc: an APE is served exactly as uploaded, twice
+	  cmd: |
+		set -eu
+		. {shared.env}
+		cd "$(mktemp -d)"
+		curl -fsSL -o ape1.bin "$STATIC/file?$APE_QUERY&fmt=raw"
+		curl -fsSL -o ape2.bin "$STATIC/file?$APE_QUERY&fmt=raw"
+		cmp "$APE" ape1.bin
+		cmp ape1.bin ape2.bin
+		echo "ape-verbatim"
+	  outputs:
+		stdout:
+			- "ape-verbatim"
