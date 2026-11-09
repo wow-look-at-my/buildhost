@@ -142,16 +142,20 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
-    { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "goproxy", group: "Proxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "mirror", group: "Proxy", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
     { id: "github", href: "#/github", label: "GitHub", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "settings", href: "#/settings", label: "Settings", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.37-.84-2.94.73-2.1 2.1.54.89.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98a1.53 1.53 0 01.95 2.29c-.84 1.37.73 2.94 2.1 2.1a1.53 1.53 0 012.29.95c.38 1.56 2.6 1.56 2.98 0a1.53 1.53 0 012.29-.95c1.37.84 2.94-.73 2.1-2.1a1.53 1.53 0 01.95-2.29c1.56-.38 1.56-2.6 0-2.98a1.53 1.53 0 01-.95-2.29c.84-1.37-.73-2.94-2.1-2.1a1.53 1.53 0 01-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>' },
-    { id: "mirror", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
+
+const NAV_GROUP_ICONS: Record<string, string> = {
+    Proxy: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zm14 5H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM5 12a1 1 0 112 0 1 1 0 01-2 0zm4 0a1 1 0 112 0 1 1 0 01-2 0z" clip-rule="evenodd"/></svg>'
+};
 
 // renderBanner shows each setting that is set but cannot work, above every page.
 const renderBanner = function (problems: string[]): void {
@@ -166,9 +170,13 @@ const renderSidebar = function (nav: string): void {
     var sb = sidebarCache;
     var build = sb ? sb.build : null;
     var links = "";
+    var group = "";
     for (var i = 0; i < NAV_ITEMS.length; i++) {
-        var n = NAV_ITEMS[i]!;
-        links += '<li><a href="' + n.href + '"' + (n.id === nav ? ' class="active"' : '') + '>' + n.icon + " " + h(n.label) + "</a></li>";
+        var n: { id: string; group?: string; href: string; label: string; icon: string } = NAV_ITEMS[i]!;
+        // A group gets one heading row; its tabs sit one step deeper under it.
+        if (n.group && n.group !== group) links += '<li class="nav-group">' + NAV_GROUP_ICONS[n.group] + " " + h(n.group) + "</li>";
+        group = n.group || "";
+        links += '<li' + (n.group ? ' class="nav-sub"' : "") + '><a href="' + n.href + '"' + (n.id === nav ? ' class="active"' : '') + '>' + n.icon + " " + h(n.label) + "</a></li>";
     }
     var footer = "";
     if (build && build.commit_url) {
@@ -1895,7 +1903,8 @@ const demoData: Record<string, unknown> = {
     },
     "/github-credential": {
         source: "token", env_credential: false, github_api: "https://github-state-mirror.pazer.io",
-        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" }
+        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" },
+        token_set: false, app_id_set: false, app_key_set: false, app_problem: "", app_error: ""
     },
     "/settings": {
         can_restart: true,
@@ -2400,23 +2409,49 @@ pages.github = function (): void {
     setTitle("GitHub");
     renderSidebar("github");
     apiFetch<GitHubCredentialData>("/github-credential").then(function (d) {
-        var source = d.source === "app" ? "GitHub App" : d.source === "token" ? "token" : "none";
-        var ss = d.secret_server;
-        var html = "<h1>GitHub credential</h1>";
-        html += '<div class="stat-grid"><div class="stat-card"><div class="stat-value">' + h(source) + '</div><div class="stat-label">In use</div></div></div>';
-        html += '<div class="card"><p>buildhost authenticates its own GitHub calls with this credential: run status for run files, default branches, collaborator checks. Every call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p>";
-        if (d.env_credential) {
-            html += "<p>The credential comes from the environment (<code>BUILDHOST_GITHUB_TOKEN</code> or <code>BUILDHOST_GITHUB_APP_ID</code>), which takes precedence over secret-server.</p>";
-        } else if (!ss.configured) {
-            html += '<p class="error">No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set, so every GitHub call fails: run files never learn that their run ended. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and save it on the <a href="#/settings">Settings</a> page.</p>';
-        } else if (ss.ok) {
-            html += "<p>secret-server vended the " + h(ss.applied === "app" ? "GitHub App" : "token") + " at " + h(ss.at || "") + ". buildhost fetches it again every 15 minutes.</p>";
-        } else {
-            html += '<p class="error">The last secret-server fetch failed at ' + h(ss.at || "") + ": " + h(ss.error || "") + ". buildhost retries every minute.</p>";
-        }
-        html += "</div>";
-        document.getElementById("content")!.innerHTML = html;
+        document.getElementById("content")!.innerHTML = gitHubCredentialHTML(d);
     });
+};
+
+// gitHubCredentialHTML leads with whether GitHub calls work and why not, then shows each way to give buildhost a credential.
+const gitHubCredentialHTML = function (d: GitHubCredentialData): string {
+    const ss = d.secret_server;
+    const settings = '<a href="#/settings">Settings</a>';
+    let html = "<h1>GitHub credential</h1>";
+
+    let head: string;
+    if (d.source === "app") {
+        head = d.app_error
+            ? '<p class="error"><strong>Not working.</strong> The GitHub App is configured, but its last token request failed: ' + h(d.app_error) + ".</p>"
+            : "<p><strong>Working.</strong> buildhost signs its GitHub calls as the GitHub App.</p>";
+    } else if (d.source === "token") {
+        head = "<p><strong>Working.</strong> buildhost signs its GitHub calls with a token" + (d.token_set ? " from <code>BUILDHOST_GITHUB_TOKEN</code>" : " that secret-server vended") + ".</p>";
+    } else if (d.app_problem) {
+        head = '<p class="error"><strong>Not working.</strong> ' + h(d.app_problem) + ". Fix it on the " + settings + " page, then restart.</p>";
+    } else if (ss.configured && !ss.ok) {
+        head = '<p class="error"><strong>Not working.</strong> The secret-server fetch failed' + (ss.at ? " at " + h(ss.at) : "") + ": " + h(ss.error || "no error text") + ". buildhost retries every minute.</p>";
+    } else {
+        head = '<p class="error"><strong>Not working.</strong> buildhost has no GitHub credential, so every GitHub call fails. Run files never learn that their run ended. Set up one of the options below.</p>';
+    }
+    html += '<div class="card">' + head +
+        '<p class="muted">buildhost uses this credential for its own GitHub calls: run status for run files, default branches, collaborator checks. Each call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p></div>";
+
+    const state = function (ok: boolean, text: string): string {
+        return '<span class="badge ' + (ok ? "badge-success" : "badge-neutral") + '">' + h(text) + "</span>";
+    };
+    const appState = d.app_problem ? '<span class="badge badge-danger">broken</span>'
+        : d.app_id_set && d.app_key_set ? state(true, "configured") : state(false, d.app_id_set || d.app_key_set ? "half set" : "not set");
+    html += '<div class="card"><h2>Options</h2><p class="muted">The first one that works wins, in this order. Each is a setting on the ' + settings + " page.</p><table class=\"data-table\"><tbody>";
+    html += "<tr><td><strong>1. GitHub App</strong> " + appState + '<div class="muted">Set <code>BUILDHOST_GITHUB_APP_ID</code> and paste or upload the App&#39;s <code>.pem</code> key in <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>. The App must be installed on each repository buildhost asks about.</div>' +
+        (d.app_problem ? '<div class="error">' + h(d.app_problem) + "</div>" : "") + "</td></tr>";
+    html += "<tr><td><strong>2. Token</strong> " + state(d.token_set, d.token_set ? "set" : "not set") +
+        '<div class="muted">A GitHub token in <code>BUILDHOST_GITHUB_TOKEN</code> that can read the org&#39;s repositories and Actions runs.</div></td></tr>';
+    const ssText = !ss.configured ? "not set" : ss.ok ? "fetched " + (ss.applied === "app" ? "an App" : "a token") : "failing";
+    html += "<tr><td><strong>3. secret-server</strong> " + (ss.configured && !ss.ok ? '<span class="badge badge-danger">failing</span>' : state(ss.configured && ss.ok, ssText)) +
+        '<div class="muted">A machine token (<code>sst_...</code>) in <code>BUILDHOST_SECRET_SERVER_TOKEN</code>, entitled to <code>BUILDHOST_GITHUB_TOKEN</code> or to the App id and key. buildhost fetches them again every 15 minutes.</div>' +
+        (ss.configured && !ss.ok ? '<div class="error">' + h(ss.error || "") + "</div>" : "") + "</td></tr>";
+    html += "</tbody></table></div>";
+    return html;
 };
 
 pages.settings = function (): void {

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +30,13 @@ type githubApp struct {
 	jwtExpiry time.Time
 	instCache map[string]instEntry // owner -> installation id
 	tokCache  map[int64]appTok     // installation id -> access token
+	lastErr   string               // why the last installation token request failed
+}
+
+func (a *githubApp) fail(format string, args ...any) {
+	a.mu.Lock()
+	a.lastErr = fmt.Sprintf(format, args...)
+	a.mu.Unlock()
 }
 
 type instEntry struct {
@@ -92,6 +100,31 @@ func GitHubCredentialSource() string {
 		return "token"
 	}
 	return "none"
+}
+
+// GitHubAppLastError says why the last installation token request of the App failed, or "".
+func GitHubAppLastError() string {
+	app := currentGitHubApp()
+	if app == nil {
+		return ""
+	}
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	return app.lastErr
+}
+
+// missingCredentialReason says why bearerForRepo returned no token for owner/repo.
+func missingCredentialReason(owner, repo string) string {
+	if app := currentGitHubApp(); app != nil {
+		app.mu.Lock()
+		why := app.lastErr
+		app.mu.Unlock()
+		if why == "" {
+			why = "no reason was recorded"
+		}
+		return "the GitHub App got no installation token for " + owner + "/" + repo + ": " + why
+	}
+	return "buildhost has no GitHub credential. Set BUILDHOST_SECRET_SERVER_TOKEN, BUILDHOST_GITHUB_TOKEN, or the GitHub App id and private key on the Settings page"
 }
 
 // bearerForRepo returns the bearer token to authenticate a github.com REST call
@@ -186,11 +219,13 @@ func (a *githubApp) createInstallationToken(ctx context.Context, jwtStr string, 
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
 		slog.WarnContext(ctx, "github app: installation token request failed", "installation", instID, "err", err)
+		a.fail("the installation token request failed: %v", err)
 		return "", time.Time{}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		slog.WarnContext(ctx, "github app: installation token refused", "installation", instID, "status", resp.StatusCode)
+		a.fail("GitHub answered %d to the installation token request for installation %d", resp.StatusCode, instID)
 		return "", time.Time{}
 	}
 	var body struct {
@@ -222,11 +257,17 @@ func (a *githubApp) appGet(ctx context.Context, jwtStr, path string, out any) bo
 	resp, err := githubBranchHTTPClient.Do(req)
 	if err != nil {
 		slog.WarnContext(ctx, "github app: request failed", "path", path, "err", err)
+		a.fail("GET %s failed: %v", path, err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		slog.WarnContext(ctx, "github app: request refused", "path", path, "status", resp.StatusCode)
+		if resp.StatusCode == http.StatusNotFound && strings.HasSuffix(path, "/installation") {
+			a.fail("the App is not installed on that repository (GitHub answered 404 to GET %s)", path)
+		} else {
+			a.fail("GitHub answered %d to GET %s with the App JWT", resp.StatusCode, path)
+		}
 		return false
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out) == nil

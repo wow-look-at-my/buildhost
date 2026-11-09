@@ -85,7 +85,7 @@ func TestAPISettingsAppKey(t *testing.T) {
 	good := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
 	put := func(v string) *httptest.ResponseRecorder {
 		b, _ := json.Marshal(map[string]string{"value": v})
-		return serve(srv, http.MethodPut, "/api/settings/"+config.GitHubAppKeySetting, bytes.NewReader(b))
+		return serve(srv, http.MethodPut, "/api/settings/"+config.GitHubAppKeySetting, bytes.NewBuffer(b))
 	}
 
 	w := put(good)

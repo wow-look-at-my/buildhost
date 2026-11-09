@@ -434,6 +434,13 @@ export interface GitHubCredentialData {
         applied?: string;
     };
     github_api: string;
+    token_set: boolean;
+    app_id_set: boolean;
+    app_key_set: boolean;
+    /** Why the configured App id and key cannot work, or "". */
+    app_problem: string;
+    /** Why the App's last installation token request failed, or "". */
+    app_error: string;
 }
 
 export interface MergePlan {

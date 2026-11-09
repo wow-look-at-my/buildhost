@@ -99,8 +99,8 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 		"tags":                   tagRows,
 		"release_upstream": mirrorUpstreamRow{Service: mirror.ReleaseUpstream.Service, Remote: mirror.ReleaseUpstream.Remote,
 			URL: auth.DeriveServiceURL(r, "mirror").String() + "/github.com/<owner>/<repo>/releases/download/<tag>/<asset>"},
-		"release_assets":         assetRows,
-		"janitor":                mirror.LastReport(),
+		"release_assets": assetRows,
+		"janitor":        mirror.LastReport(),
 	}
 	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
 		resp["disk_free"] = du.Free
