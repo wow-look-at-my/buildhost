@@ -10,7 +10,7 @@
 4. None of that was visible, because the *committed* `app.js` was still the old, complete bundle. It is what `go:embed` shipped, what the tests read, and what users got. The TypeScript was dead source that nothing executed.
 5. Removing the committed artifacts (correctly — they are build output) made the binary embed a dashboard with no JavaScript, and turned tests red on `open static/app.js: no such file`.
 
-The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that hids it.
+The divergence existed from the moment of the conversion. It surfaced only when someone deleted the file that hides it.
 
 ## Why nothing caught it
 
@@ -34,8 +34,8 @@ git diff --quiet                      # 1. drift
 git ls-files -i -c --exclude-standard # 2. committed at all
 ```
 
-1. **Drift** — a committed artifact whose source no longer produces it. A regenerate rewrites the file. As a result, the working tree is dirty. This assertion goes red the first time the TypeScript and the committed bundle disagree. the arrangement went red months later, when the file was deleted.
-2. **Committed at all** — a tracked file that `.gitignore` says is build output. Needed because a deterministic build (esbuild is one) regenerates a *byte-same* artifact, leaving check 1 green while the artifact sits in git waiting to drift. This one flags it immediately, in sync or not.
+1. **Drift** — a committed artifact whose source no longer produces it. A regenerate rewrites the file. As a result, the working tree is dirty. This assertion goes red the first time the TypeScript and the committed bundle disagree. The arrangement went red months later, when the file was deleted.
+2. **Committed at all** — a tracked file that `.gitignore` says is build output. Needed because a deterministic build (esbuild is one) regenerates a *byte-identical* artifact, leaving check 1 green while the artifact sits in git waiting to drift. This one flags it immediately, in sync or not.
 
 ## How the restored bundle was verified
 
@@ -56,7 +56,7 @@ The bug cuts both ways. The committed bundle is what shipped, so anything writte
 - **`encodeURIComponent` on an admin API path.** A running server answers `200` to both `GET /api/projects/repo%2Fbinary` and `GET /api/projects/repo/binary` for a slash-namespaced project. That was verified. The change is therefore safe for the namespace feature, not merely untested.
 - **A decode of the route segments.** Kept, and guarded by `decodeSegment`. A malformed `%` sequence falls back to the raw text instead of a throw. The old router cannot do that, because it never decoded at all.
 
-Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-same. The types are a superset. Every rendering difference was a loss, not an addition.
+Everything else in the TypeScript was a strict subset of the old bundle. `copy.js` builds byte-identical. The types are a superset. Every rendering difference was a loss, not an addition.
 
 ## When a test must assert on built output
 

@@ -18,6 +18,8 @@ On a **private** project's release page the admin SPA's per-artifact `raw`, `deb
 
 It is stateless. There is no DB row. It is not individually revocable. Rotate `download-signing.key` to invalidate every one of them. The link points at `static` directly with no `dl` hop. The version is already resolved, because the binding needs an exact version.
 
+It is stateless. There is no DB row. It is not individually revocable. Rotate `download-signing.key` to invalidate every one of them. The link points at `static` directly with no `dl` hop. The version is already resolved, because the binding needs an exact version.
+
 **Security review note**: `&token=bhdl_...` is a stateless HMAC-SHA256 signature over `(project, version, os, arch, fmt, debug, expiry)`. Its key is `{DataDir}/download-signing.key`, many random bytes at mode 0600, generated on first start. It only ever *grants* read to the single artifact it is signed for, under an otherwise-private project. It cannot escalate. It cannot cross projects. It cannot outlive its capped expiry of 24h or less.
 
 Verification is constant-time (`hmac.Equal`). Minting needs the `share` scope over REST, or the access-controlled admin dashboard. There is a trade-off. A link is not individually revocable before it expires, and a key rotation invalidates every one of them. That is acceptable for a short-lived link. A token-gated response is `Cache-Control: private, no-store`, so the shared CDN never caches it.
