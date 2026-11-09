@@ -56,6 +56,10 @@ type Params struct {
 	Debug   bool
 	// Token, when set, is a signed temporary download token (see
 	Token string
+	// Mirror names a registered MirrorSource.
+	Mirror string
+	SHA256 string
+	Name   string
 }
 
 func For(project string) Params              { return Params{Project: project} }
@@ -108,12 +112,22 @@ func (p Params) values() url.Values {
 	if p.Token != "" {
 		q.Set("token", p.Token)
 	}
+	if p.Mirror != "" {
+		q.Set("mirror", p.Mirror)
+	}
+	if p.SHA256 != "" {
+		q.Set("sha256", p.SHA256)
+	}
+	if p.Name != "" {
+		q.Set("name", p.Name)
+	}
 	return q
 }
 
 var knownParams = set.Of(
 	"arch", "debug", "fmt",
 	"project", "os", "v", "token",
+	"mirror", "sha256", "name",
 )
 
 func canonicalQuery(raw url.Values) string {
