@@ -2465,7 +2465,7 @@ const SETTING_SOURCE_BADGE: Record<string, string> = { dashboard: "badge-info", 
 const renderSettings = function (d: SettingsData): void {
     const pending = d.settings.filter((s) => s.restart_pending);
     let html = "<h1>Settings</h1>";
-    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Clear it to fall back to the environment, then the default. ' +
+    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Saving an empty field stores an empty value. Clear removes the saved value, so the environment and then the default apply again. ' +
         "Upload limits apply at once. Every other setting applies when the server restarts. A change after which the server would not start is refused.</p>";
     if (pending.length) {
         html += '<p class="error">' + h(pending.length) + " saved setting" + (pending.length === 1 ? " waits" : "s wait") + " for a restart: " +
