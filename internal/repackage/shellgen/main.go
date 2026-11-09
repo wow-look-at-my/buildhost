@@ -123,6 +123,7 @@ func client() *http.Client { return &http.Client{Timeout: 2 * time.Minute} }
 
 func fetchToken(ctx context.Context) (string, error) {
 	var resp *http.Response
+	last := 0
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
 		if err != nil {
@@ -130,12 +131,13 @@ func fetchToken(ctx context.Context) (string, error) {
 		}
 		resp, err = client().Do(req)
 		if err != nil {
-			return "", fmt.Errorf("registry token: %w", err)
+			return "", gaveUp(ctx, "registry token", last, err)
 		}
 		if !retryable(resp.StatusCode) {
 			break
 		}
 		status, wait := resp.StatusCode, retryWait(resp)
+		last = status
 		resp.Body.Close()
 		if err := pause(ctx, "registry token", status, wait); err != nil {
 			return "", err
@@ -157,7 +159,16 @@ func fetchToken(ctx context.Context) (string, error) {
 	return t.Token, nil
 }
 
+// gaveUp names the status the registry kept answering when the deadline ends a request in flight.
+func gaveUp(ctx context.Context, what string, status int, err error) error {
+	if status != 0 && ctx.Err() != nil {
+		return fmt.Errorf("%s: HTTP %d, and the %s deadline passed on the next request: %w", what, status, fetchDeadline, err)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
+	last := 0
 	for {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, registryURL+p, nil)
 		if err != nil {
@@ -169,12 +180,13 @@ func get(ctx context.Context, token, p, accept string) (io.ReadCloser, error) {
 		}
 		resp, err := client().Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("GET %s: %w", p, err)
+			return nil, gaveUp(ctx, "GET "+p, last, err)
 		}
 		if resp.StatusCode == http.StatusOK {
 			return resp.Body, nil
 		}
 		status, wait := resp.StatusCode, retryWait(resp)
+		last = status
 		resp.Body.Close()
 		if !retryable(status) {
 			return nil, fmt.Errorf("GET %s: HTTP %d", p, status)

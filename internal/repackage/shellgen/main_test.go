@@ -87,6 +87,32 @@ func TestGetGivesUpAtTheDeadlineAndSaysSo(t *testing.T) {
 	assert.Contains(t, err.Error(), "deadline")
 }
 
+// The deadline can end a request in flight instead of a pause. The error must still name the last status.
+func TestGetNamesTheLastStatusWhenTheDeadlineEndsARequest(t *testing.T) {
+	t.Serial("swaps the package-wide retry timing and registry URL")
+	fastRetries(t)
+	fetchDeadline = time.Second
+	var n atomic.Int32
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(s.Close)
+	oldURL := registryURL
+	registryURL = s.URL
+	t.Cleanup(func() { registryURL = oldURL })
+
+	ctx, cancel := context.WithTimeout(context.Background(), fetchDeadline)
+	defer cancel()
+	_, err := get(ctx, "t", "/v2/x", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTP 429")
+	assert.Contains(t, err.Error(), "deadline")
+}
+
 func TestFetchTokenAsksAgainAfterARateLimit(t *testing.T) {
 	t.Serial()
 	fastRetries(t)
