@@ -20,6 +20,7 @@ type Kind string
 const (
 	KindString   Kind = "string"
 	KindSecret   Kind = "secret" // never sent back to the dashboard
+	KindPEM      Kind = "pem"    // a secret that the dashboard edits as multi-line text or a file
 	KindBool     Kind = "bool"
 	KindDuration Kind = "duration"
 	KindPercent  Kind = "percent"
@@ -41,6 +42,9 @@ type Setting struct {
 	Live bool `json:"live"`
 }
 
+// Secret reports a setting whose value never goes back to the dashboard.
+func (s Setting) Secret() bool { return s.Kind == KindSecret || s.Kind == KindPEM }
+
 // Settings is every variable, in the order the dashboard shows them.
 var Settings = []Setting{
 	{Name: "BUILDHOST_PRIMARY_DOMAIN", Group: "Domains", Kind: KindString, Description: "The apex that owns the web UI, /api/v1 and the GitHub OAuth callback, or * to serve every Host. Required."},
@@ -50,7 +54,7 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_SECRET_SERVER_TOKEN", Group: "GitHub", Kind: KindSecret, Description: "secret-server machine token (sst_...) that vends the GitHub credential. github-state-mirror refuses a call with no credential, so run status, default branches and the Go proxy need one."},
 	{Name: "BUILDHOST_GITHUB_TOKEN", Group: "GitHub", Kind: KindSecret, Description: "GitHub token for buildhost's own GitHub calls. Takes precedence over the secret-server token."},
 	{Name: "BUILDHOST_GITHUB_APP_ID", Group: "GitHub", Kind: KindString, Description: "GitHub App id. Set with the private key. Takes precedence over the secret-server token."},
-	{Name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", Group: "GitHub", Kind: KindSecret, Description: "GitHub App private key: the PEM, or a path to it."},
+	{Name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", Group: "GitHub", Kind: KindPEM, Description: "GitHub App private key: the PEM text, or a path to the PEM file. A save checks that the key parses."},
 	{Name: "BUILDHOST_GITHUB_WEBHOOK_SECRET", Group: "GitHub", Kind: KindSecret, Description: "Secret that GitHub signs webhook deliveries with."},
 	{Name: "BUILDHOST_GITHUB_CLIENT_ID", Group: "GitHub", Kind: KindString, Description: "OAuth client id for browser sign-in with GitHub."},
 	{Name: "BUILDHOST_GITHUB_CLIENT_SECRET", Group: "GitHub", Kind: KindSecret, Description: "OAuth client secret for browser sign-in with GitHub."},
@@ -87,6 +91,9 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_DATA_DIR", Group: "Server", Kind: KindString, Default: "./data", EnvOnly: true, Description: "Blob store and temp directory."},
 	{Name: "BUILDHOST_DB_PATH", Group: "Server", Kind: KindString, Default: "./data/buildhost.db", EnvOnly: true, Description: "SQLite database. The stored settings live in it."},
 }
+
+// GitHubAppKeySetting is the GitHub App private key. The dashboard edits it as PEM text.
+const GitHubAppKeySetting = "BUILDHOST_GITHUB_APP_PRIVATE_KEY"
 
 // LookupSetting returns the setting named name.
 func LookupSetting(name string) (Setting, bool) {
@@ -191,6 +198,11 @@ func CheckValue(s Setting, value string) error {
 	case KindInt:
 		if n, err := strconv.Atoi(v); err != nil || n < 0 {
 			return fmt.Errorf("%s: want a non-negative integer", s.Name)
+		}
+	}
+	if s.Name == GitHubAppKeySetting {
+		if _, err := ParseGitHubAppKey(v); err != nil {
+			return fmt.Errorf("%s: %w. Nothing was saved", s.Name, err)
 		}
 	}
 	if s.Name == "BUILDHOST_SECRET_SERVER_TOKEN" && !strings.HasPrefix(v, "sst_") {

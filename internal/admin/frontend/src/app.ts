@@ -1900,6 +1900,8 @@ const demoData: Record<string, unknown> = {
         settings: [
             { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
             { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
+            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: false, fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
+            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
             { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
             { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
             { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
@@ -2445,11 +2447,31 @@ const renderSettings = function (d: SettingsData): void {
     }
     document.getElementById("content")!.innerHTML = html;
     document.querySelectorAll<HTMLFormElement>("form[data-setting]").forEach(function (f) {
+        const check = f.querySelector<HTMLInputElement>("input[data-bool]");
+        if (check) {
+            check.addEventListener("change", function () { saveSetting(f.dataset.setting!, "PUT", check.checked ? "true" : "false", f); });
+            return;
+        }
+        const input = f.querySelector<HTMLInputElement | HTMLTextAreaElement>(".form-input")!;
         f.addEventListener("submit", function (e) {
             e.preventDefault();
-            const input = f.querySelector("input") as HTMLInputElement;
-            saveSetting(f.dataset.setting!, "PUT", input.value);
+            if (input.value.trim() === "" && f.dataset.secret === "1" &&
+                !confirm("Save an EMPTY value for " + f.dataset.setting + "? It replaces the stored value and overrides the environment. Use Clear to fall back to the environment instead.")) return;
+            saveSetting(f.dataset.setting!, "PUT", input.value, f);
         });
+        const file = f.querySelector<HTMLInputElement>("input[type=file]");
+        file?.addEventListener("change", function () {
+            const picked = file.files?.[0];
+            if (!picked) return;
+            picked.text().then(function (t) {
+                input.value = t;
+                input.dispatchEvent(new Event("input"));
+            });
+        });
+        if (f.dataset.pem === "1") {
+            const hint = f.querySelector<HTMLElement>(".settings-pem-hint")!;
+            input.addEventListener("input", function () { hint.innerHTML = pemHint(input.value); });
+        }
     });
     document.querySelectorAll<HTMLButtonElement>("button[data-clear]").forEach(function (b) {
         b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null); });
@@ -2458,29 +2480,62 @@ const renderSettings = function (d: SettingsData): void {
 };
 
 const settingRowHTML = function (s: SettingRow): string {
-    const secret = s.kind === "secret";
+    const secret = s.kind === "secret" || s.kind === "pem";
     let html = '<tr><td class="settings-name"><code>' + h(s.name) + '</code> <span class="badge ' + (SETTING_SOURCE_BADGE[s.source] ?? "badge-neutral") + '">' + h(s.source) + "</span>";
     if (s.restart_pending) html += ' <span class="badge badge-warning">restart pending</span>';
     html += '<div class="muted">' + h(s.description) + (s.default ? " Default: <code>" + h(s.default) + "</code>." : "") + "</div></td><td>";
     if (s.env_only) {
         html += "<code>" + h(s.value || "(empty)") + '</code><div class="muted">Environment only.</div>';
     } else {
-        const placeholder = secret ? (s.set ? "set (hidden)" : "not set") : s.default;
-        html += '<form class="settings-form" data-setting="' + h(s.name) + '"><input class="form-input" type="' + (secret ? "password" : "text") +
-            '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' +
-            '<button class="btn btn-primary btn-sm" type="submit">Save</button>' +
-            (s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "") + "</form>";
+        const storedEmpty = s.source === "dashboard" && !s.set;
+        const placeholder = storedEmpty ? "empty (overrides the environment)" : secret ? (s.set ? "set (hidden): type a new value to replace it" : "not set") : s.default;
+        const clear = s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "";
+        const save = '<button class="btn btn-primary btn-sm" type="submit">Save</button>';
+        const attrs = ' data-setting="' + h(s.name) + '" data-secret="' + (secret ? "1" : "0") + '"';
+        if (s.kind === "bool") {
+            const v = s.value || s.default;
+            const on = v === "true" || v === "1";
+            html += '<form class="settings-form"' + attrs + '><label class="settings-check"><input type="checkbox" data-bool="' + h(s.name) + '"' + (on ? " checked" : "") + "> " + (on ? "on" : "off") + "</label>" + clear +
+                '<div class="settings-error error" hidden></div></form>';
+        } else if (s.kind === "pem") {
+            if (s.fingerprint) html += '<div>Stored key: <code>' + h(s.fingerprint) + '</code> <span class="muted">(GitHub shows the same fingerprint next to the key on the App settings page)</span></div>';
+            if (s.problem) html += '<div class="error">The stored value does not work: ' + h(s.problem) + "</div>";
+            html += '<form class="settings-form settings-form-pem"' + attrs + ' data-pem="1">' +
+                '<textarea class="form-input settings-pem" rows="6" spellcheck="false" autocomplete="off" placeholder="' + h(placeholder + ". Paste -----BEGIN RSA PRIVATE KEY----- ..., or choose the .pem file") + '"></textarea>' +
+                '<div class="settings-pem-hint muted"></div>' +
+                '<div class="settings-form-actions"><input type="file" accept=".pem,.key,text/plain">' + save + clear + "</div>" +
+                '<div class="settings-error error" hidden></div></form>';
+        } else {
+            html += '<form class="settings-form"' + attrs + '><input class="form-input" type="' + (secret ? "password" : "text") +
+                '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' + save + clear +
+                '<div class="settings-error error" hidden></div></form>';
+        }
     }
     return html + "</td></tr>";
 };
 
-const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null): void {
+// pemHint says at once what the text in the key box looks like. The server parses the key on save and refuses one that does not parse.
+const pemHint = function (v: string): string {
+    const t = v.trim();
+    if (!t) return "";
+    const m = /^-----BEGIN ([A-Z ]+)-----[\s\S]*-----END \1-----$/.exec(t);
+    if (!m) return '<span class="error">This is not one PEM block: it must start with -----BEGIN ... PRIVATE KEY----- and end with the matching -----END line.</span>';
+    if (!/PRIVATE KEY$/.test(m[1]!)) return '<span class="error">This is a ' + h(m[1]!) + ", not a private key. GitHub gives the App private key as a .pem download.</span>";
+    return h(m[1]!) + ", " + h(t.split("\n").length) + " lines. Save checks that it parses.";
+};
+
+const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null, form?: HTMLFormElement): void {
     fetch("/api/settings/" + encodeURIComponent(name), {
         method: method,
         headers: { "Content-Type": "application/json" },
         body: value === null ? undefined : JSON.stringify({ value: value })
     }).then(function (res) {
-        if (!res.ok) return res.text().then(function (t) { alert("Not saved: " + t); });
+        if (!res.ok) return res.text().then(function (t) {
+            const box = form?.querySelector<HTMLElement>(".settings-error");
+            if (!box) { alert("Not saved: " + t); return; }
+            box.textContent = "Not saved, the previous value stays: " + t.trim();
+            box.hidden = false;
+        });
         return res.json().then(renderSettings);
     }).catch(function (e) { alert(failText("save", e)); });
 };

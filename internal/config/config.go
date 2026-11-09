@@ -152,10 +152,10 @@ type Config struct {
 // itself (contains a BEGIN marker) or a path to a PEM file. Inline PEM passed
 func resolvePEM(v string) string {
 	if strings.Contains(v, "-----BEGIN") {
-		return unescapePEMNewlines(v)
+		return rewrapPEM(unescapePEMNewlines(v))
 	}
 	if b, err := os.ReadFile(v); err == nil {
-		return string(b)
+		return rewrapPEM(string(b))
 	}
 	return v
 }
@@ -207,8 +207,8 @@ func (c Config) GitHubAppProblem() string {
 	case key && !id:
 		return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is set but BUILDHOST_GITHUB_APP_ID is empty: set both, or clear both"
 	case id && key:
-		if _, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(c.GitHubAppPrivateKey)); err != nil {
-			return "BUILDHOST_GITHUB_APP_PRIVATE_KEY is not an RSA private key in PEM form: " + err.Error()
+		if _, err := ParseGitHubAppKey(c.GitHubAppPrivateKey); err != nil {
+			return "BUILDHOST_GITHUB_APP_PRIVATE_KEY: " + err.Error()
 		}
 	}
 	return ""

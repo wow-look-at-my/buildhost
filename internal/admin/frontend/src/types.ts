@@ -403,7 +403,7 @@ export interface DuplicatesData {
 export interface SettingRow {
     name: string;
     group: string;
-    kind: "string" | "secret" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
+    kind: "string" | "secret" | "pem" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
     default: string;
     description: string;
     env_only: boolean;
@@ -412,6 +412,10 @@ export interface SettingRow {
     set: boolean;
     source: "dashboard" | "environment" | "default";
     restart_pending: boolean;
+    /** SHA-256 fingerprint of a stored key, as GitHub shows it. */
+    fingerprint?: string;
+    /** Why a stored value cannot work. */
+    problem?: string;
 }
 
 export interface SettingsData {
