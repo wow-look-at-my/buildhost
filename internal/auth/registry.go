@@ -147,7 +147,7 @@ func primaryOnly(h http.HandlerFunc) http.HandlerFunc {
 // cachedServiceLabels are the service subdomains that a CDN caches.
 var cachedServiceLabels = set.Of(
 	"apt", "brew", "dl", "docker", "git",
-	"goproxy", "npm", "oci", "sites", "static",
+	"goproxy", "mirror", "npm", "oci", "sites", "static",
 )
 
 // IsCachedContentHost reports whether host (port allowed) is a service
@@ -201,6 +201,12 @@ func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
 
 func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
 	mux.HandleFunc(servicePattern(subdomain, pattern), router.Allow, requireProjectFunc(parse, handler))
+}
+
+// RequireProjectFunc wraps handler in the project check that ServiceHandle
+// applies, for a route that serves a project only on some requests.
+func RequireProjectFunc(parse ParseFunc, handler http.HandlerFunc) http.HandlerFunc {
+	return requireProjectFunc(parse, handler)
 }
 
 func ServiceHandleRaw(subdomain, pattern string, handler http.HandlerFunc) {

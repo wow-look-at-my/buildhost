@@ -24,6 +24,21 @@ func (q *Queries) DeleteMirrorBlob(ctx context.Context, arg DeleteMirrorBlobPara
 	return err
 }
 
+const deleteMirrorReleaseAssetsForDigest = `-- name: DeleteMirrorReleaseAssetsForDigest :exec
+DELETE FROM mirror_release_assets WHERE upstream = ? AND digest = ?
+`
+
+type DeleteMirrorReleaseAssetsForDigestParams struct {
+	Upstream string `json:"upstream"`
+	Digest   string `json:"digest"`
+}
+
+// An asset that names an evicted blob gives a later download nothing to use.
+func (q *Queries) DeleteMirrorReleaseAssetsForDigest(ctx context.Context, arg DeleteMirrorReleaseAssetsForDigestParams) error {
+	_, err := q.db.ExecContext(ctx, deleteMirrorReleaseAssetsForDigest, arg.Upstream, arg.Digest)
+	return err
+}
+
 const deleteMirrorTagsForDigest = `-- name: DeleteMirrorTagsForDigest :exec
 DELETE FROM mirror_tags WHERE upstream = ? AND digest = ?
 `
@@ -68,6 +83,30 @@ func (q *Queries) GetMirrorBlob(ctx context.Context, arg GetMirrorBlobParams) (G
 		&i.Size,
 	)
 	return i, err
+}
+
+const getMirrorReleaseAsset = `-- name: GetMirrorReleaseAsset :one
+SELECT digest FROM mirror_release_assets
+WHERE upstream = ? AND repository = ? AND tag = ? AND asset = ?
+`
+
+type GetMirrorReleaseAssetParams struct {
+	Upstream   string `json:"upstream"`
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	Asset      string `json:"asset"`
+}
+
+func (q *Queries) GetMirrorReleaseAsset(ctx context.Context, arg GetMirrorReleaseAssetParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getMirrorReleaseAsset,
+		arg.Upstream,
+		arg.Repository,
+		arg.Tag,
+		arg.Asset,
+	)
+	var digest string
+	err := row.Scan(&digest)
+	return digest, err
 }
 
 const getMirrorTag = `-- name: GetMirrorTag :one
@@ -159,6 +198,42 @@ func (q *Queries) ListMirrorBlobs(ctx context.Context) ([]MirrorBlob, error) {
 	return items, nil
 }
 
+const listMirrorReleaseAssets = `-- name: ListMirrorReleaseAssets :many
+SELECT upstream, repository, tag, asset, digest, created_at
+FROM mirror_release_assets
+ORDER BY upstream, repository, tag, asset
+`
+
+func (q *Queries) ListMirrorReleaseAssets(ctx context.Context) ([]MirrorReleaseAsset, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorReleaseAssets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MirrorReleaseAsset{}
+	for rows.Next() {
+		var i MirrorReleaseAsset
+		if err := rows.Scan(
+			&i.Upstream,
+			&i.Repository,
+			&i.Tag,
+			&i.Asset,
+			&i.Digest,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMirrorTags = `-- name: ListMirrorTags :many
 SELECT upstream, repository, tag, digest, media_type, checked_at
 FROM mirror_tags
@@ -207,6 +282,33 @@ type MarkMirrorBlobReadParams struct {
 
 func (q *Queries) MarkMirrorBlobRead(ctx context.Context, arg MarkMirrorBlobReadParams) error {
 	_, err := q.db.ExecContext(ctx, markMirrorBlobRead, arg.Upstream, arg.Digest)
+	return err
+}
+
+const upsertMirrorReleaseAsset = `-- name: UpsertMirrorReleaseAsset :exec
+INSERT INTO mirror_release_assets (upstream, repository, tag, asset, digest)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (upstream, repository, tag, asset) DO UPDATE SET
+    digest     = excluded.digest,
+    created_at = datetime('now')
+`
+
+type UpsertMirrorReleaseAssetParams struct {
+	Upstream   string `json:"upstream"`
+	Repository string `json:"repository"`
+	Tag        string `json:"tag"`
+	Asset      string `json:"asset"`
+	Digest     string `json:"digest"`
+}
+
+func (q *Queries) UpsertMirrorReleaseAsset(ctx context.Context, arg UpsertMirrorReleaseAssetParams) error {
+	_, err := q.db.ExecContext(ctx, upsertMirrorReleaseAsset,
+		arg.Upstream,
+		arg.Repository,
+		arg.Tag,
+		arg.Asset,
+		arg.Digest,
+	)
 	return err
 }
 

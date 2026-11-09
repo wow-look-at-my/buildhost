@@ -630,6 +630,15 @@ export interface MirrorTagRow {
     checked_at: string;
 }
 
+/** The blob a GitHub release asset URL gave. */
+export interface MirrorReleaseAssetRow {
+    repository: string;
+    tag: string;
+    asset: string;
+    digest: string;
+    created_at: string;
+}
+
 /** One pass of the mirror janitor (mirror.Report). */
 export interface MirrorJanitor {
     at: string;
@@ -654,6 +663,8 @@ export interface MirrorData {
     upstreams: { service: string; remote: string }[];
     blobs: MirrorBlobRow[];
     tags: MirrorTagRow[];
+    release_upstream: { service: string; remote: string };
+    release_assets: MirrorReleaseAssetRow[];
     janitor: MirrorJanitor | null;
 }
 

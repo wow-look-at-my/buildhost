@@ -31,6 +31,14 @@ type mirrorTagRow struct {
 	CheckedAt  time.Time `json:"checked_at"`
 }
 
+type mirrorReleaseAssetRow struct {
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Asset      string    `json:"asset"`
+	Digest     string    `json:"digest"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type mirrorUpstreamRow struct {
 	Service string `json:"service"`
 	Remote  string `json:"remote"`
@@ -63,6 +71,16 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 	for idx, t := range tags {
 		tagRows[idx] = mirrorTagRow{Upstream: t.Upstream, Repository: t.Repository, Tag: t.Tag, Digest: t.Digest, MediaType: t.MediaType, CheckedAt: t.CheckedAt}
 	}
+	assets, err := s.db.ListMirrorReleaseAssets(r.Context())
+	if err != nil {
+		slog.Error("admin api error", "err", err, "path", r.URL.Path)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	assetRows := make([]mirrorReleaseAssetRow, len(assets))
+	for idx, a := range assets {
+		assetRows[idx] = mirrorReleaseAssetRow{Repository: a.Repository, Tag: a.Tag, Asset: a.Asset, Digest: a.Digest, CreatedAt: a.CreatedAt}
+	}
 	upstreams := make([]mirrorUpstreamRow, len(mirror.Upstreams))
 	for idx, u := range mirror.Upstreams {
 		upstreams[idx] = mirrorUpstreamRow{Service: u.Service, Remote: u.Remote}
@@ -76,6 +94,8 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 		"upstreams":              upstreams,
 		"blobs":                  blobRows,
 		"tags":                   tagRows,
+		"release_upstream":       mirrorUpstreamRow{Service: mirror.ReleaseUpstream.Service, Remote: mirror.ReleaseUpstream.Remote},
+		"release_assets":         assetRows,
 		"janitor":                mirror.LastReport(),
 	}
 	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
