@@ -84,10 +84,9 @@ func newReleaseFixture(t *testing.T) *releaseFixture {
 	require.NoError(t, err)
 	up := newFakeGitHub(t)
 	h := &ReleaseHandler{Handler: Handler{Up: Upstream{Service: ReleaseUpstream.Service, Remote: up.URL}, DB: d, Store: store, TmpDir: t.TempDir(), Client: up.Client()}}
-	// The router the server runs: the mirror's pattern beside the download route.
+	// The mirror owns its subdomain, so its pattern is the only route.
 	rt := router.New()
 	rt.HandleFunc(h.Pattern(), router.Allow, h.ServeHTTP)
-	rt.HandleFunc("GET /{project}", router.Allow, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) })
 	return &releaseFixture{h: h, up: up, rt: rt}
 }
 
@@ -222,27 +221,47 @@ func TestJanitorEvictsReleaseAssets(t *testing.T) {
 	assert.Equal(t, 2, f.up.count(protocAsset), "an evicted asset comes from GitHub again")
 }
 
-func TestParseReleasePath(t *testing.T) {
-	for _, tc := range []struct {
-		in   string
-		want releasePath
-		ok   bool
-	}{
-		{"BurntSushi/ripgrep/releases/download/15.0.0/ripgrep-15.0.0-aarch64-apple-darwin.tar.gz", releasePath{"BurntSushi/ripgrep", "15.0.0", "ripgrep-15.0.0-aarch64-apple-darwin.tar.gz"}, true},
-		{"joseluisq/macosx-sdks/releases/download/14.5/MacOSX14.5.sdk.tar.xz", releasePath{"joseluisq/macosx-sdks", "14.5", "MacOSX14.5.sdk.tar.xz"}, true},
-		{"o/r/releases/download/cli/v1/a.zip", releasePath{"o/r", "cli/v1", "a.zip"}, true},
-		{"o/r/releases/download/v1", releasePath{}, false},
-		{"o/r/releases/latest/download/a.zip", releasePath{}, false},
-		{"o/r/archive/refs/tags/v1.tar.gz", releasePath{}, false},
-		{"o/../releases/download/v1/a.zip", releasePath{}, false},
-		{"o/r/releases/download/../a.zip", releasePath{}, false},
-		{"o/r/releases/download/v1/..", releasePath{}, false},
-		{"-o/r/releases/download/v1/a.zip", releasePath{}, false},
-		{"o/r/releases/download/v 1/a.zip", releasePath{}, false},
-		{"o/r/releases/download//a.zip", releasePath{}, false},
+func TestOnlyReleaseAssetPathsReachGitHub(t *testing.T) {
+	f := newReleaseFixture(t)
+	for _, p := range []string{
+		"/o/r/releases/download/v1",
+		"/o/r/releases/latest/download/a.zip",
+		"/o/r/archive/refs/tags/v1.tar.gz",
+		"/o/r/raw/main/README.md",
+		"/o/r",
+		"/o/../releases/download/v1/a.zip",
+		"/o/r/releases/download/../a.zip",
+		"/o/r/releases/download/v1/..",
+		"/-o/r/releases/download/v1/a.zip",
+		"/o/r/releases/download/v%201/a.zip",
+		"/a/b/c/releases/download/v1/a.zip",
 	} {
-		got, ok := parseReleasePath(tc.in)
-		assert.Equal(t, tc.ok, ok, tc.in)
-		assert.Equal(t, tc.want, got, tc.in)
+		rec := f.do(t, http.MethodGet, p, nil, true)
+		assert.Equal(t, http.StatusNotFound, rec.Code, p)
+	}
+	f.up.mu.Lock()
+	defer f.up.mu.Unlock()
+	assert.Empty(t, f.up.calls, "a path that is not a release asset must never reach GitHub")
+}
+
+func TestReleasePathOf(t *testing.T) {
+	for _, tc := range []struct {
+		owner, repo, tag, asset string
+		want                    releasePath
+		ok                      bool
+	}{
+		{"BurntSushi", "ripgrep", "15.0.0", "ripgrep-15.0.0-aarch64-apple-darwin.tar.gz", releasePath{"BurntSushi/ripgrep", "15.0.0", "ripgrep-15.0.0-aarch64-apple-darwin.tar.gz"}, true},
+		{"joseluisq", "macosx-sdks", "14.5", "MacOSX14.5.sdk.tar.xz", releasePath{"joseluisq/macosx-sdks", "14.5", "MacOSX14.5.sdk.tar.xz"}, true},
+		{"o", "r", "cli/v1", "a.zip", releasePath{"o/r", "cli/v1", "a.zip"}, true},
+		{"o/x", "r", "v1", "a.zip", releasePath{}, false},
+		{"o", "..", "v1", "a.zip", releasePath{}, false},
+		{"o", "r", "..", "a.zip", releasePath{}, false},
+		{"o", "r", "v1", "..", releasePath{}, false},
+		{"o", "r", "v1", "a/b.zip", releasePath{}, false},
+		{"o", "r", "", "a.zip", releasePath{}, false},
+	} {
+		got, ok := releasePathOf(tc.owner, tc.repo, tc.tag, tc.asset)
+		assert.Equal(t, tc.ok, ok, "%+v", tc)
+		assert.Equal(t, tc.want, got, "%+v", tc)
 	}
 }

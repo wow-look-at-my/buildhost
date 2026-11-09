@@ -12,7 +12,7 @@ Every response carries `Cache-Control: private` and `Vary: Authorization`. The C
 
 ## What it serves
 
-`GET` and `HEAD` on `/github.com/<owner>/<repo>/releases/download/<tag>/<asset>`. A tag can hold a slash: the asset is the last segment. Every other method answers 405. `releases/latest/download/...` and source archives answer 404. A `latest` URL names a different asset over time, and the mirror stores an asset once.
+`GET` and `HEAD` on `/github.com/<owner>/<repo>/releases/download/<tag>/<asset>`, and nothing else. The route pattern carries that shape, so the router answers every other path with 404 and every other method with 405 before the handler runs. A tag can hold a slash: the asset is the last segment. `releases/latest/download/...` and source archives answer 404. A `latest` URL names a different asset over time, and the mirror stores an asset once.
 
 ## Auth
 

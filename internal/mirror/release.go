@@ -57,7 +57,10 @@ func init() {
 	auth.ServiceHandleRaw(ReleaseSubdomain, h.Pattern(), h.ServeHTTP)
 }
 
-func (h *ReleaseHandler) Pattern() string { return "/" + ReleaseRoot + "/{path...}" }
+// Pattern is the only shape the mirror serves.
+func (h *ReleaseHandler) Pattern() string {
+	return "GET /" + ReleaseRoot + "/{owner}/{repo}/releases/download/{tag}/{asset}"
+}
 
 // releasePath is one asset URL. repository is owner/repo as the client spelled it.
 type releasePath struct {
@@ -94,47 +97,36 @@ func validSegment(s string) bool {
 	return segmentRe.MatchString(s) && s != "." && s != ".."
 }
 
-// parseReleasePath reads <owner>/<repo>/releases/download/<tag>/<asset>. A tag
-// can hold a slash, so the asset is the last segment and the tag is the rest.
-func parseReleasePath(p string) (releasePath, bool) {
-	parts := strings.Split(p, "/")
-	if len(parts) < 6 || parts[2] != "releases" || parts[3] != "download" {
-		return releasePath{}, false
-	}
-	owner, repo, tagParts, asset := parts[0], parts[1], parts[4:len(parts)-1], parts[len(parts)-1]
+// releasePathOf checks the values the route matched. A route value can span
+// segments, so owner, repo and asset must each still be one segment.
+func releasePathOf(owner, repo, tag, asset string) (releasePath, bool) {
 	if !ownerRe.MatchString(owner) || !repoNameRe.MatchString(repo) || repo == "." || repo == ".." || !validSegment(asset) {
 		return releasePath{}, false
 	}
-	for _, s := range tagParts {
+	for _, s := range strings.Split(tag, "/") {
 		if !validSegment(s) {
 			return releasePath{}, false
 		}
 	}
-	tag := strings.Join(tagParts, "/")
 	if len(tag) > maxTagBytes {
 		return releasePath{}, false
 	}
 	return releasePath{repository: owner + "/" + repo, tag: tag, asset: asset}, true
 }
 
-// ServeHTTP serves every path under mirror.{domain}/github.com/.
+// ServeHTTP serves one release asset.
 func (h *ReleaseHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// The CDN caches a .zip or a .tar.gz by its extension.
 	w.Header().Set("Cache-Control", "private")
 	w.Header().Set("Vary", "Authorization")
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		w.Header().Set("Allow", "GET, HEAD")
-		http.Error(w, "the release mirror is read-only", http.StatusMethodNotAllowed)
-		return
-	}
 	if !authorized(r) {
 		w.Header().Set("Www-Authenticate", `Basic realm="buildhost"`)
 		http.Error(w, "a buildhost token with the read scope is required", http.StatusUnauthorized)
 		return
 	}
-	p, ok := parseReleasePath(r.PathValue("path"))
+	p, ok := releasePathOf(r.PathValue("owner"), r.PathValue("repo"), r.PathValue("tag"), r.PathValue("asset"))
 	if !ok {
-		http.Error(w, "the release mirror serves only /github.com/<owner>/<repo>/releases/download/<tag>/<asset>", http.StatusNotFound)
+		http.Error(w, "not a GitHub release asset path", http.StatusNotFound)
 		return
 	}
 	ctx := r.Context()
