@@ -57,11 +57,14 @@ func (d *DB) ListMirrorBlobs(ctx context.Context) ([]MirrorBlob, error) {
 	return rows, nil
 }
 
-// DeleteMirrorBlob forgets the blob and every tag that names it. The caller
-// deletes the stored bytes once nothing else references them.
+// DeleteMirrorBlob forgets the blob and every tag and release asset that names
+// it. The caller deletes the stored bytes once nothing else references them.
 func (d *DB) DeleteMirrorBlob(ctx context.Context, upstream, digest string) error {
 	if err := d.q.DeleteMirrorTagsForDigest(ctx, DeleteMirrorTagsForDigestParams{Upstream: upstream, Digest: digest}); err != nil {
 		return fmt.Errorf("delete mirror tags: %w", err)
+	}
+	if err := d.q.DeleteMirrorReleaseAssetsForDigest(ctx, DeleteMirrorReleaseAssetsForDigestParams{Upstream: upstream, Digest: digest}); err != nil {
+		return fmt.Errorf("delete mirror release assets: %w", err)
 	}
 	if err := d.q.DeleteMirrorBlob(ctx, DeleteMirrorBlobParams{Upstream: upstream, Digest: digest}); err != nil {
 		return fmt.Errorf("delete mirror blob: %w", err)
@@ -97,6 +100,38 @@ func (d *DB) ListMirrorTags(ctx context.Context) ([]MirrorTag, error) {
 	rows, err := d.q.ListMirrorTags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list mirror tags: %w", err)
+	}
+	return rows, nil
+}
+
+// GetMirrorReleaseAsset returns the digest a release asset URL gave, and whether the mirror knows the asset.
+func (d *DB) GetMirrorReleaseAsset(ctx context.Context, upstream, repository, tag, asset string) (string, bool, error) {
+	digest, err := d.q.GetMirrorReleaseAsset(ctx, GetMirrorReleaseAssetParams{Upstream: upstream, Repository: repository, Tag: tag, Asset: asset})
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("get mirror release asset: %w", err)
+	}
+	return digest, true, nil
+}
+
+// PutMirrorReleaseAsset records the digest a release asset URL gave.
+func (d *DB) PutMirrorReleaseAsset(ctx context.Context, upstream, repository, tag, asset, digest string) error {
+	err := d.q.UpsertMirrorReleaseAsset(ctx, UpsertMirrorReleaseAssetParams{
+		Upstream: upstream, Repository: repository, Tag: tag, Asset: asset, Digest: digest,
+	})
+	if err != nil {
+		return fmt.Errorf("put mirror release asset: %w", err)
+	}
+	return nil
+}
+
+// ListMirrorReleaseAssets returns every release asset the mirror knows.
+func (d *DB) ListMirrorReleaseAssets(ctx context.Context) ([]MirrorReleaseAsset, error) {
+	rows, err := d.q.ListMirrorReleaseAssets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list mirror release assets: %w", err)
 	}
 	return rows, nil
 }
