@@ -26,5 +26,10 @@ func (s *Server) apiGitHubCredential(w http.ResponseWriter, _ *http.Request) {
 		"env_credential": s.cfg.GitHubToken != "" || s.cfg.HasGitHubApp(),
 		"secret_server":  secretserver.LastStatus(),
 		"github_api":     auth.GitHubAPI,
+		"token_set":      s.cfg.GitHubToken != "",
+		"app_id_set":     s.cfg.GitHubAppID != "",
+		"app_key_set":    s.cfg.GitHubAppPrivateKey != "",
+		"app_problem":    s.cfg.GitHubAppProblem(),
+		"app_error":      auth.GitHubAppLastError(),
 	})
 }
