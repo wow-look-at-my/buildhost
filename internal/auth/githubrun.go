@@ -28,9 +28,11 @@ func GitHubRunEnded(ctx context.Context, repoPath, runID string) (time.Time, boo
 	}
 	req.Header.Set("User-Agent", "buildhost")
 	req.Header.Set("Accept", "application/vnd.github+json")
-	if bearer := bearerForRepo(ctx, owner, repo); bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
+	bearer := bearerForRepo(ctx, owner, repo)
+	if bearer == "" {
+		return time.Time{}, false, fmt.Errorf("cannot ask GitHub about run %s#%s: %s", repoPath, runID, missingCredentialReason(owner, repo))
 	}
+	req.Header.Set("Authorization", "Bearer "+bearer)
 	resp, err := githubRunHTTPClient.Do(req)
 	if err != nil {
 		return time.Time{}, false, err
