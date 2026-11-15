@@ -2,7 +2,7 @@
 
 Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
 
-The TOP-LEVEL publish composites are `buildhost-publish`, `buildhost-publish-site` and `buildhost-publish-docker`. Each registers its publish as a GitHub Deployment in the calling repo, under the input `deployment_environment`. A `Create GitHub Deployment` step (`id: deployment`, right after the no-all-builds guard) creates the deployment plus an `in_progress` status. A `Finish GitHub Deployment` step (`id: deployment-status`, `if: always() && deployment_id != ''`) posts the terminal `success` or `failure` status.
+Each registers its publish as a GitHub Deployment in the calling repo, under the input `deployment_environment`. A `Create GitHub Deployment` step (`id: deployment`, right after the no-all-builds guard) creates the deployment plus an `in_progress` status. A `Finish GitHub Deployment` step (`id: deployment-status`, `if: always() && deployment_id != ''`) posts the terminal `success` or `failure` status.
 
 That status carries an `environment_url`, the live buildhost URL. For a single-project `buildhost-publish` it is the release page, `{server}/projects/{proj}/releases/{rv}`, from the publish script's `deployment_url` output. A multi-project fan-out links the primary project's page. For `buildhost-publish-site` it is the `site_url`. For `buildhost-publish-docker` it is `{server}/projects/{project}`.
 

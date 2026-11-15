@@ -14,7 +14,7 @@ It is also the permanent fix for the BFD hole. strip. Objcopy accept PE/COFF and
 
 ## What it does
 
-Drop the non-`SHF_ALLOC` debug and symbol sections (`.debug_*`, `.zdebug_*`, `.stab*`, `.symtab`, `.strtab`). Keep everything else. Rewrite the section table. An allocated section NEVER moves. A program header addresses it by file offset, so a relocation breaks execution. The whole transformation is therefore "copy the allocated prefix verbatim, re-emit the rest".
+Drop the non-`SHF_ALLOC` debug and symbol sections. Keep everything else. Rewrite the section table. An allocated section NEVER moves. A program header addresses it by file offset, so a relocation breaks execution. The whole transformation is therefore "copy the allocated prefix verbatim, re-emit the rest".
 
 `.shstrtab` is kept as it is. A stripped file therefore still contains the NAMES of the dropped sections as bytes. A substring search for `.debug_info` is not a valid check. Read the section table instead. The debug companion mirrors `objcopy --only-keep-debug`. Every section header is retained, an allocated one becomes `SHT_NOBITS`, and the program-header fields are cleared.
 

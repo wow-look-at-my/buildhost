@@ -2,7 +2,7 @@
 
 `internal/static/`. Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
 
-Unified download endpoint on `static.{domain}/file`. All artifact downloads go through here. The Fmt interface self-registers. The query params are `project`, `v`, `os`, `arch` and `fmt`. It includes the raw and symbols formats plus a bridge for the repackage-based formats.
+Unified download endpoint on `static.{domain}/file`. All artifact downloads go through here. The Fmt interface self-registers. It includes the raw and symbols formats plus a bridge for the repackage-based formats.
 
 ## Signed temporary download tokens
 

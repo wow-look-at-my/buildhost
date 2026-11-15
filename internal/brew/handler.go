@@ -103,7 +103,6 @@ type Handler struct {
 	// DataDir is the persistent data root. The tap's per-lineage git history
 	DataDir string
 
-	// tapMu guards tapSnaps, tapPins and tapRefreshes: the live tap lineages (an open
 	tapMu    sync.Mutex
 	tapSnaps map[string]*tapLineage
 	tapPins  map[string]int
