@@ -403,7 +403,7 @@ export interface DuplicatesData {
 export interface SettingRow {
     name: string;
     group: string;
-    kind: "string" | "secret" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
+    kind: "string" | "secret" | "pem" | "bool" | "duration" | "percent" | "bytes" | "int" | "list";
     default: string;
     description: string;
     env_only: boolean;
@@ -412,6 +412,10 @@ export interface SettingRow {
     set: boolean;
     source: "dashboard" | "environment" | "default";
     restart_pending: boolean;
+    /** SHA-256 fingerprint of a stored key, as GitHub shows it. */
+    fingerprint?: string;
+    /** Why a stored value cannot work. */
+    problem?: string;
 }
 
 export interface SettingsData {
@@ -430,6 +434,13 @@ export interface GitHubCredentialData {
         applied?: string;
     };
     github_api: string;
+    token_set: boolean;
+    app_id_set: boolean;
+    app_key_set: boolean;
+    /** Why the configured App id and key cannot work, or "". */
+    app_problem: string;
+    /** Why the App's last installation token request failed, or "". */
+    app_error: string;
 }
 
 export interface MergePlan {
@@ -660,10 +671,10 @@ export interface MirrorData {
     disk_free?: number;
     disk_total?: number;
     disk_used?: number;
-    upstreams: { service: string; remote: string }[];
+    upstreams: { service: string; remote: string; url: string }[];
     blobs: MirrorBlobRow[];
     tags: MirrorTagRow[];
-    release_upstream: { service: string; remote: string };
+    release_upstream: { service: string; remote: string; url: string };
     release_assets: MirrorReleaseAssetRow[];
     janitor: MirrorJanitor | null;
 }

@@ -11,7 +11,7 @@ buildhost bootstrap --name admin-token
 
 ## Settings
 
-The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Clear it to fall back to the environment, then the default. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
+The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Saving an empty value stores an empty override. Clear removes the stored value, so the environment and then the default apply again. The GitHub App private key takes PEM text or a `.pem` file. A key that does not parse is refused and the previous value stays. The page shows the stored key's SHA-256 fingerprint, the same one GitHub lists for the App. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
 
 - The upload limits apply at once. Every other setting applies at the next start. The page marks such a setting "restart pending" and has a **Start server** button. The button shuts down gracefully and exits non-zero, so the container start policy starts the server again.
 - A change after which `Config.Validate` fails is refused. A server that cannot start takes the dashboard down with it.
