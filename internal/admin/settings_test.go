@@ -2,8 +2,14 @@ package admin
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,6 +72,54 @@ func TestAPISettings(t *testing.T) {
 	w = serve(srv, http.MethodDelete, "/api/settings/BUILDHOST_RUN_FILES_KEEP", nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	assert.Equal(t, "48h", settingsByName(t, w.Body.Bytes())["BUILDHOST_RUN_FILES_KEEP"].Value, "clearing falls back to the environment")
+}
+
+func TestAPISettingsAppKey(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	srv, _ := newTestServer(t)
+	config.SetStored(nil)
+	t.Cleanup(func() { config.SetStored(nil) })
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	good := string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))
+	put := func(v string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"value": v})
+		return serve(srv, http.MethodPut, "/api/settings/"+config.GitHubAppKeySetting, bytes.NewBuffer(b))
+	}
+
+	w := put(good)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.NotContains(t, w.Body.String(), "PRIVATE KEY", "the key never goes back to the browser")
+	row := settingsByName(t, w.Body.Bytes())[config.GitHubAppKeySetting]
+	assert.Equal(t, config.KeyFingerprint(key), row.Fingerprint)
+	assert.Empty(t, row.Problem)
+
+	w = put("-----BEGIN RSA PRIVATE KEY-----garbage-----END RSA PRIVATE KEY-----")
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "not an RSA private key")
+	assert.Equal(t, strings.TrimSpace(good), config.Getenv(config.GitHubAppKeySetting), "a refused key leaves the stored key as it was")
+}
+
+func TestAPISettingsStoresAnEmptyOverride(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	t.Setenv("BUILDHOST_OTEL_ENDPOINT", "http://collector:4318")
+	srv, _ := newTestServer(t)
+	config.SetStored(nil)
+	t.Cleanup(func() { config.SetStored(nil) })
+
+	w := serve(srv, http.MethodPut, "/api/settings/BUILDHOST_OTEL_ENDPOINT", bytes.NewBufferString(`{"value":""}`))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	row := settingsByName(t, w.Body.Bytes())["BUILDHOST_OTEL_ENDPOINT"]
+	assert.Equal(t, "dashboard", row.Source, "an empty save overrides the environment")
+	assert.Equal(t, "", row.Value)
+	assert.Equal(t, "", config.Getenv("BUILDHOST_OTEL_ENDPOINT"))
+
+	w = serve(srv, http.MethodDelete, "/api/settings/BUILDHOST_OTEL_ENDPOINT", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "http://collector:4318", settingsByName(t, w.Body.Bytes())["BUILDHOST_OTEL_ENDPOINT"].Value, "Clear falls back to the environment")
 }
 
 func TestAPISettingsRefusesAConfigThatCannotStart(t *testing.T) {
