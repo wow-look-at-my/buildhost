@@ -109,7 +109,9 @@ const demoFetch = function <T>(path: string): T {
 const apiFetch = function <T>(path: string): Promise<T> {
     if (demo) return Promise.resolve().then(function () { return demoFetch<T>(path); });
     return fetch("/api" + path).then(function (r) {
-        if (!r.ok) throw new Error("GET /api" + path + ": HTTP " + r.status);
+        if (!r.ok) return r.text().then(function (t) {
+            throw new Error("GET /api" + path + ": HTTP " + r.status + (t.trim() ? ": " + t.trim() : ""));
+        });
         return r.json();
     });
 };
@@ -140,16 +142,20 @@ var NAV_ITEMS = [
     { id: "registries", href: "#/registries", label: "Registries", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 0h8v3H6V4zm0 5h8v2H6V9zm0 4h5v2H6v-2z" clip-rule="evenodd"/></svg>' },
     { id: "tokens", href: "#/tokens", label: "Tokens", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "sites", href: "#/sites", label: "Sites", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4.083 9h1.946c.089-1.546.383-2.97.837-4.118A6.004 6.004 0 004.083 9zM10 2a8 8 0 100 16 8 8 0 000-16zm0 2c-.076 0-.232.032-.465.262-.238.234-.497.623-.737 1.182-.389.907-.673 2.142-.766 3.556h3.936c-.093-1.414-.377-2.649-.766-3.556-.24-.56-.5-.948-.737-1.182C10.232 4.032 10.076 4 10 4zm3.971 5c-.089-1.546-.383-2.97-.837-4.118A6.004 6.004 0 0115.917 9h-1.946zm-2.003 2H8.032c.093 1.414.377 2.649.766 3.556.24.56.5.948.737 1.182.233.23.389.262.465.262.076 0 .232-.032.465-.262.238-.234.497-.623.737-1.182.389-.907.673-2.142.766-3.556zm1.166 4.118c.454-1.147.748-2.572.837-4.118h1.946a6.004 6.004 0 01-2.783 4.118zm-6.268 0C6.412 13.97 6.118 12.546 6.029 11H4.083a6.004 6.004 0 002.783 4.118z" clip-rule="evenodd"/></svg>' },
-    { id: "goproxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "goproxy", group: "Proxy", href: "#/goproxy", label: "Go Proxy", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>' },
+    { id: "mirror", group: "Proxy", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "run-files", href: "#/run-files", label: "Run Files", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm1 5a1 1 0 100 2h7a1 1 0 100-2H4z"/></svg>' },
     { id: "cache", href: "#/cache", label: "CI Cache", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 5c0-1.1 3.1-2 7-2s7 .9 7 2v10c0 1.1-3.1 2-7 2s-7-.9-7-2V5zm7 2c3.9 0 7-.9 7-2s-3.1-2-7-2-7 .9-7 2 3.1 2 7 2z"/></svg>' },
     { id: "github", href: "#/github", label: "GitHub", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M18 8a6 6 0 01-7.743 5.743L10 14l-1 1-1 1H6v2H2v-4l4.257-4.257A6 6 0 1118 8zm-6-4a1 1 0 100 2 2 2 0 012 2 1 1 0 102 0 4 4 0 00-4-4z" clip-rule="evenodd"/></svg>' },
     { id: "settings", href: "#/settings", label: "Settings", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.53 1.53 0 01-2.29.95c-1.37-.84-2.94.73-2.1 2.1.54.89.07 2.04-.95 2.29-1.56.38-1.56 2.6 0 2.98a1.53 1.53 0 01.95 2.29c-.84 1.37.73 2.94 2.1 2.1a1.53 1.53 0 012.29.95c.38 1.56 2.6 1.56 2.98 0a1.53 1.53 0 012.29-.95c1.37.84 2.94-.73 2.1-2.1a1.53 1.53 0 01.95-2.29c1.56-.38 1.56-2.6 0-2.98a1.53 1.53 0 01-.95-2.29c.84-1.37-.73-2.94-2.1-2.1a1.53 1.53 0 01-2.29-.95zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>' },
-    { id: "mirror", href: "#/mirror", label: "Registry Mirror", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M3 6a1 1 0 011-1h12a1 1 0 011 1v2H3V6zm0 4h14v4a1 1 0 01-1 1H4a1 1 0 01-1-1v-4zm3 2a1 1 0 100 2h2a1 1 0 100-2H6z"/></svg>' },
     { id: "oidc", href: "#/oidc", label: "OIDC Policies", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' },
     { id: "retention", href: "#/retention", label: "Retention", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>' },
     { id: "duplicates", href: "#/duplicates", label: "Duplicates", icon: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path d="M7 3a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V5a2 2 0 00-2-2H7z"/><path d="M3 7a2 2 0 012-2v10h8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>' }
 ];
+
+const NAV_GROUP_ICONS: Record<string, string> = {
+    Proxy: '<svg viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zm14 5H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM5 12a1 1 0 112 0 1 1 0 01-2 0zm4 0a1 1 0 112 0 1 1 0 01-2 0z" clip-rule="evenodd"/></svg>'
+};
 
 // renderBanner shows each setting that is set but cannot work, above every page.
 const renderBanner = function (problems: string[]): void {
@@ -164,9 +170,13 @@ const renderSidebar = function (nav: string): void {
     var sb = sidebarCache;
     var build = sb ? sb.build : null;
     var links = "";
+    var group = "";
     for (var i = 0; i < NAV_ITEMS.length; i++) {
-        var n = NAV_ITEMS[i]!;
-        links += '<li><a href="' + n.href + '"' + (n.id === nav ? ' class="active"' : '') + '>' + n.icon + " " + h(n.label) + "</a></li>";
+        var n: { id: string; group?: string; href: string; label: string; icon: string } = NAV_ITEMS[i]!;
+        // A group gets one heading row; its tabs sit one step deeper under it.
+        if (n.group && n.group !== group) links += '<li class="nav-group">' + NAV_GROUP_ICONS[n.group] + " " + h(n.group) + "</li>";
+        group = n.group || "";
+        links += '<li' + (n.group ? ' class="nav-sub"' : "") + '><a href="' + n.href + '"' + (n.id === nav ? ' class="active"' : '') + '>' + n.icon + " " + h(n.label) + "</a></li>";
     }
     var footer = "";
     if (build && build.commit_url) {
@@ -1750,13 +1760,13 @@ const demoMirror = function (): MirrorData {
         disk_total: 500_000_000_000,
         disk_used: 438_000_000_000,
         disk_free: 62_000_000_000,
-        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io" }, { service: "ghcr", remote: "https://ghcr.io" }],
+        upstreams: [{ service: "dockerhub", remote: "https://registry-1.docker.io", url: "https://oci.builds.example.com/v2/dockerhub/" }, { service: "ghcr", remote: "https://ghcr.io", url: "https://oci.builds.example.com/v2/ghcr/" }],
         blobs: blobs,
         tags: [
             { upstream: "dockerhub", repository: "library/alpine", tag: "latest", digest: digest("a1pine"), media_type: "application/vnd.oci.image.index.v1+json", checked_at: ago(0.1) },
             { upstream: "ghcr", repository: "actions/actions-runner", tag: "2.330.0", digest: digest("runner"), media_type: "application/vnd.oci.image.manifest.v1+json", checked_at: ago(2) }
         ],
-        release_upstream: { service: "github-releases", remote: "https://github.com" },
+        release_upstream: { service: "github-releases", remote: "https://github.com", url: "https://mirror.builds.example.com/github.com/<owner>/<repo>/releases/download/<tag>/<asset>" },
         release_assets: [
             { repository: "protocolbuffers/protobuf", tag: "v29.3", asset: "protoc-29.3-linux-x86_64.zip", digest: digest("pr0toc"), created_at: ago(30) }
         ],
@@ -1893,13 +1903,16 @@ const demoData: Record<string, unknown> = {
     },
     "/github-credential": {
         source: "token", env_credential: false, github_api: "https://github-state-mirror.pazer.io",
-        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" }
+        secret_server: { configured: true, ok: true, applied: "token", at: "2026-10-25T14:00:00Z" },
+        token_set: false, app_id_set: false, app_key_set: false, app_problem: "", app_error: ""
     },
     "/settings": {
         can_restart: true,
         settings: [
             { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
             { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
+            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: false, fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
+            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
             { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
             { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
             { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
@@ -2396,23 +2409,49 @@ pages.github = function (): void {
     setTitle("GitHub");
     renderSidebar("github");
     apiFetch<GitHubCredentialData>("/github-credential").then(function (d) {
-        var source = d.source === "app" ? "GitHub App" : d.source === "token" ? "token" : "none";
-        var ss = d.secret_server;
-        var html = "<h1>GitHub credential</h1>";
-        html += '<div class="stat-grid"><div class="stat-card"><div class="stat-value">' + h(source) + '</div><div class="stat-label">In use</div></div></div>';
-        html += '<div class="card"><p>buildhost authenticates its own GitHub calls with this credential: run status for run files, default branches, collaborator checks. Every call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p>";
-        if (d.env_credential) {
-            html += "<p>The credential comes from the environment (<code>BUILDHOST_GITHUB_TOKEN</code> or <code>BUILDHOST_GITHUB_APP_ID</code>), which takes precedence over secret-server.</p>";
-        } else if (!ss.configured) {
-            html += '<p class="error">No <code>BUILDHOST_SECRET_SERVER_TOKEN</code> is set, so every GitHub call fails: run files never learn that their run ended. Issue a secret-server machine token entitled to <code>BUILDHOST_GITHUB_TOKEN</code> (or <code>BUILDHOST_GITHUB_APP_ID</code> and <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>) and save it on the <a href="#/settings">Settings</a> page.</p>';
-        } else if (ss.ok) {
-            html += "<p>secret-server vended the " + h(ss.applied === "app" ? "GitHub App" : "token") + " at " + h(ss.at || "") + ". buildhost fetches it again every 15 minutes.</p>";
-        } else {
-            html += '<p class="error">The last secret-server fetch failed at ' + h(ss.at || "") + ": " + h(ss.error || "") + ". buildhost retries every minute.</p>";
-        }
-        html += "</div>";
-        document.getElementById("content")!.innerHTML = html;
+        document.getElementById("content")!.innerHTML = gitHubCredentialHTML(d);
     });
+};
+
+// gitHubCredentialHTML leads with whether GitHub calls work and why not, then shows each way to give buildhost a credential.
+const gitHubCredentialHTML = function (d: GitHubCredentialData): string {
+    const ss = d.secret_server;
+    const settings = '<a href="#/settings">Settings</a>';
+    let html = "<h1>GitHub credential</h1>";
+
+    let head: string;
+    if (d.source === "app") {
+        head = d.app_error
+            ? '<p class="error"><strong>Not working.</strong> The GitHub App is configured, but its last token request failed: ' + h(d.app_error) + ".</p>"
+            : "<p><strong>Working.</strong> buildhost signs its GitHub calls as the GitHub App.</p>";
+    } else if (d.source === "token") {
+        head = "<p><strong>Working.</strong> buildhost signs its GitHub calls with a token" + (d.token_set ? " from <code>BUILDHOST_GITHUB_TOKEN</code>" : " that secret-server vended") + ".</p>";
+    } else if (d.app_problem) {
+        head = '<p class="error"><strong>Not working.</strong> ' + h(d.app_problem) + ". Fix it on the " + settings + " page, then restart.</p>";
+    } else if (ss.configured && !ss.ok) {
+        head = '<p class="error"><strong>Not working.</strong> The secret-server fetch failed' + (ss.at ? " at " + h(ss.at) : "") + ": " + h(ss.error || "no error text") + ". buildhost retries every minute.</p>";
+    } else {
+        head = '<p class="error"><strong>Not working.</strong> buildhost has no GitHub credential, so every GitHub call fails. Run files never learn that their run ended. Set up one of the options below.</p>';
+    }
+    html += '<div class="card">' + head +
+        '<p class="muted">buildhost uses this credential for its own GitHub calls: run status for run files, default branches, collaborator checks. Each call goes through <code>' + h(d.github_api) + "</code>, which refuses a call with no token.</p></div>";
+
+    const state = function (ok: boolean, text: string): string {
+        return '<span class="badge ' + (ok ? "badge-success" : "badge-neutral") + '">' + h(text) + "</span>";
+    };
+    const appState = d.app_problem ? '<span class="badge badge-danger">broken</span>'
+        : d.app_id_set && d.app_key_set ? state(true, "configured") : state(false, d.app_id_set || d.app_key_set ? "half set" : "not set");
+    html += '<div class="card"><h2>Options</h2><p class="muted">The first one that works wins, in this order. Each is a setting on the ' + settings + " page.</p><table class=\"data-table\"><tbody>";
+    html += "<tr><td><strong>1. GitHub App</strong> " + appState + '<div class="muted">Set <code>BUILDHOST_GITHUB_APP_ID</code> and paste or upload the App&#39;s <code>.pem</code> key in <code>BUILDHOST_GITHUB_APP_PRIVATE_KEY</code>. The App must be installed on each repository buildhost asks about.</div>' +
+        (d.app_problem ? '<div class="error">' + h(d.app_problem) + "</div>" : "") + "</td></tr>";
+    html += "<tr><td><strong>2. Token</strong> " + state(d.token_set, d.token_set ? "set" : "not set") +
+        '<div class="muted">A GitHub token in <code>BUILDHOST_GITHUB_TOKEN</code> that can read the org&#39;s repositories and Actions runs.</div></td></tr>';
+    const ssText = !ss.configured ? "not set" : ss.ok ? "fetched " + (ss.applied === "app" ? "an App" : "a token") : "failing";
+    html += "<tr><td><strong>3. secret-server</strong> " + (ss.configured && !ss.ok ? '<span class="badge badge-danger">failing</span>' : state(ss.configured && ss.ok, ssText)) +
+        '<div class="muted">A machine token (<code>sst_...</code>) in <code>BUILDHOST_SECRET_SERVER_TOKEN</code>, entitled to <code>BUILDHOST_GITHUB_TOKEN</code> or to the App id and key. buildhost fetches them again every 15 minutes.</div>' +
+        (ss.configured && !ss.ok ? '<div class="error">' + h(ss.error || "") + "</div>" : "") + "</td></tr>";
+    html += "</tbody></table></div>";
+    return html;
 };
 
 pages.settings = function (): void {
@@ -2426,7 +2465,7 @@ const SETTING_SOURCE_BADGE: Record<string, string> = { dashboard: "badge-info", 
 const renderSettings = function (d: SettingsData): void {
     const pending = d.settings.filter((s) => s.restart_pending);
     let html = "<h1>Settings</h1>";
-    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Clear it to fall back to the environment, then the default. ' +
+    html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Saving an empty field stores an empty value. Clear removes the saved value, so the environment and then the default apply again. ' +
         "Upload limits apply at once. Every other setting applies when the server restarts. A change after which the server would not start is refused.</p>";
     if (pending.length) {
         html += '<p class="error">' + h(pending.length) + " saved setting" + (pending.length === 1 ? " waits" : "s wait") + " for a restart: " +
@@ -2445,11 +2484,31 @@ const renderSettings = function (d: SettingsData): void {
     }
     document.getElementById("content")!.innerHTML = html;
     document.querySelectorAll<HTMLFormElement>("form[data-setting]").forEach(function (f) {
+        const check = f.querySelector<HTMLInputElement>("input[data-bool]");
+        if (check) {
+            check.addEventListener("change", function () { saveSetting(f.dataset.setting!, "PUT", check.checked ? "true" : "false", f); });
+            return;
+        }
+        const input = f.querySelector<HTMLInputElement | HTMLTextAreaElement>(".form-input")!;
         f.addEventListener("submit", function (e) {
             e.preventDefault();
-            const input = f.querySelector("input") as HTMLInputElement;
-            saveSetting(f.dataset.setting!, "PUT", input.value);
+            if (input.value.trim() === "" && f.dataset.secret === "1" &&
+                !confirm("Save an EMPTY value for " + f.dataset.setting + "? It replaces the stored value and overrides the environment. Use Clear to fall back to the environment instead.")) return;
+            saveSetting(f.dataset.setting!, "PUT", input.value, f);
         });
+        const file = f.querySelector<HTMLInputElement>("input[type=file]");
+        file?.addEventListener("change", function () {
+            const picked = file.files?.[0];
+            if (!picked) return;
+            picked.text().then(function (t) {
+                input.value = t;
+                input.dispatchEvent(new Event("input"));
+            });
+        });
+        if (f.dataset.pem === "1") {
+            const hint = f.querySelector<HTMLElement>(".settings-pem-hint")!;
+            input.addEventListener("input", function () { hint.innerHTML = pemHint(input.value); });
+        }
     });
     document.querySelectorAll<HTMLButtonElement>("button[data-clear]").forEach(function (b) {
         b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null); });
@@ -2458,29 +2517,62 @@ const renderSettings = function (d: SettingsData): void {
 };
 
 const settingRowHTML = function (s: SettingRow): string {
-    const secret = s.kind === "secret";
+    const secret = s.kind === "secret" || s.kind === "pem";
     let html = '<tr><td class="settings-name"><code>' + h(s.name) + '</code> <span class="badge ' + (SETTING_SOURCE_BADGE[s.source] ?? "badge-neutral") + '">' + h(s.source) + "</span>";
     if (s.restart_pending) html += ' <span class="badge badge-warning">restart pending</span>';
     html += '<div class="muted">' + h(s.description) + (s.default ? " Default: <code>" + h(s.default) + "</code>." : "") + "</div></td><td>";
     if (s.env_only) {
         html += "<code>" + h(s.value || "(empty)") + '</code><div class="muted">Environment only.</div>';
     } else {
-        const placeholder = secret ? (s.set ? "set (hidden)" : "not set") : s.default;
-        html += '<form class="settings-form" data-setting="' + h(s.name) + '"><input class="form-input" type="' + (secret ? "password" : "text") +
-            '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' +
-            '<button class="btn btn-primary btn-sm" type="submit">Save</button>' +
-            (s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "") + "</form>";
+        const storedEmpty = s.source === "dashboard" && !s.set;
+        const placeholder = storedEmpty ? "empty (overrides the environment)" : secret ? (s.set ? "set (hidden): type a new value to replace it" : "not set") : s.default;
+        const clear = s.source === "dashboard" ? '<button class="btn btn-sm" type="button" data-clear="' + h(s.name) + '">Clear</button>' : "";
+        const save = '<button class="btn btn-primary btn-sm" type="submit">Save</button>';
+        const attrs = ' data-setting="' + h(s.name) + '" data-secret="' + (secret ? "1" : "0") + '"';
+        if (s.kind === "bool") {
+            const v = s.value || s.default;
+            const on = v === "true" || v === "1";
+            html += '<form class="settings-form"' + attrs + '><label class="settings-check"><input type="checkbox" data-bool="' + h(s.name) + '"' + (on ? " checked" : "") + "> " + (on ? "on" : "off") + "</label>" + clear +
+                '<div class="settings-error error" hidden></div></form>';
+        } else if (s.kind === "pem") {
+            if (s.fingerprint) html += '<div>Stored key: <code>' + h(s.fingerprint) + '</code> <span class="muted">(GitHub shows the same fingerprint next to the key on the App settings page)</span></div>';
+            if (s.problem) html += '<div class="error">The stored value does not work: ' + h(s.problem) + "</div>";
+            html += '<form class="settings-form settings-form-pem"' + attrs + ' data-pem="1">' +
+                '<textarea class="form-input settings-pem" rows="6" spellcheck="false" autocomplete="off" placeholder="' + h(placeholder + ". Paste -----BEGIN RSA PRIVATE KEY----- ..., or choose the .pem file") + '"></textarea>' +
+                '<div class="settings-pem-hint muted"></div>' +
+                '<div class="settings-form-actions"><input type="file" accept=".pem,.key,text/plain">' + save + clear + "</div>" +
+                '<div class="settings-error error" hidden></div></form>';
+        } else {
+            html += '<form class="settings-form"' + attrs + '><input class="form-input" type="' + (secret ? "password" : "text") +
+                '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' + save + clear +
+                '<div class="settings-error error" hidden></div></form>';
+        }
     }
     return html + "</td></tr>";
 };
 
-const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null): void {
+// pemHint says at once what the text in the key box looks like. The server parses the key on save and refuses one that does not parse.
+const pemHint = function (v: string): string {
+    const t = v.trim();
+    if (!t) return "";
+    const m = /^-----BEGIN ([A-Z ]+)-----[\s\S]*-----END \1-----$/.exec(t);
+    if (!m) return '<span class="error">This is not one PEM block: it must start with -----BEGIN ... PRIVATE KEY----- and end with the matching -----END line.</span>';
+    if (!/PRIVATE KEY$/.test(m[1]!)) return '<span class="error">This is a ' + h(m[1]!) + ", not a private key. GitHub gives the App private key as a .pem download.</span>";
+    return h(m[1]!) + ", " + h(t.split("\n").length) + " lines. Save checks that it parses.";
+};
+
+const saveSetting = function (name: string, method: "PUT" | "DELETE", value: string | null, form?: HTMLFormElement): void {
     fetch("/api/settings/" + encodeURIComponent(name), {
         method: method,
         headers: { "Content-Type": "application/json" },
         body: value === null ? undefined : JSON.stringify({ value: value })
     }).then(function (res) {
-        if (!res.ok) return res.text().then(function (t) { alert("Not saved: " + t); });
+        if (!res.ok) return res.text().then(function (t) {
+            const box = form?.querySelector<HTMLElement>(".settings-error");
+            if (!box) { alert("Not saved: " + t); return; }
+            box.textContent = "Not saved, the previous value stays: " + t.trim();
+            box.hidden = false;
+        });
         return res.json().then(renderSettings);
     }).catch(function (e) { alert(failText("save", e)); });
 };
@@ -2507,11 +2599,11 @@ const renderMirror = function (d: MirrorData): void {
         reads += b.reads;
     }
     const keepDays = Math.round(d.keep_seconds / 86400);
-    const hosts = d.upstreams.map((u) => "<code>" + h(u.service) + ".</code> fronts " + h(u.remote)).join(", ");
+    const hosts = d.upstreams.map((u) => "<code>" + h(u.url) + "</code> fronts " + h(u.remote)).join(", ");
     let html = "<h1>Registry Mirror</h1>";
     html += '<p class="rf-lede">A read-only pull-through mirror: ' + hosts + ". A pull needs a token with the read scope. " +
         "A tag is asked of its upstream again after " + h(d.tag_ttl_seconds) + "s, and the last digest still serves while the upstream is down. " +
-        "<code>mirror./github.com/&lt;owner&gt;/&lt;repo&gt;/releases/download/&lt;tag&gt;/&lt;asset&gt;</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
+        "<code>" + h(d.release_upstream.url) + "</code> fronts " + h(d.release_upstream.remote) + " release assets the same way. " +
         "A blob nothing reads for " + h(keepDays) + "d goes, and the least recently used go sooner while free disk is under " + h(d.min_free_percent) + "%.</p>";
     html += '<div class="rf-kpis">' +
         kpi(d.blobs.length - manifests, "blobs") + kpi(manifests, "manifests") + kpi(d.tags.length, "tags") + kpi(d.release_assets.length, "release assets") +
