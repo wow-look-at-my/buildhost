@@ -97,7 +97,12 @@ var serveCmd = &cobra.Command{
 			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
 		}
 
-		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
+		if err := database.SeedRetentionSettings(context.Background(), db.RetentionSettings{
+			KeepN:         cfg.RetentionKeepN,
+			RecencyHours:  int(cfg.RetentionRecencyGuard.Hours()),
+			BranchKeepN:   cfg.RetentionBranchKeepN,
+			BranchTTLDays: cfg.RetentionBranchTTL,
+		}); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
 
@@ -268,7 +273,8 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 					continue
 				}
 				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce)).
-					WithRecordDeleter(recordDeleterFor(cfg))
+					WithRecordDeleter(recordDeleterFor(cfg)).
+					WithBranchLister(auth.GitHubBranches)
 				rep, err := ret.Run(ctx)
 				if err != nil {
 					slog.Error("retention sweep failed", "err", err)
@@ -281,6 +287,9 @@ func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.
 }
 
 func logRetentionReport(rep retention.Report) {
+	for _, e := range rep.BranchSync.Errors {
+		slog.Error("retention branch sync failed for a repo", "err", e)
+	}
 	if rep.Enforced {
 		for _, r := range rep.EvictedReleases {
 			slog.Warn("retention evicted release", "reason", "keep-n",

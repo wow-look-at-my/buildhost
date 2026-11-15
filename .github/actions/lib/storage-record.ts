@@ -40,7 +40,7 @@ export async function recordReleaseArtifacts(octokit: Octokit, core: Core, conte
 		records.push({
 			name: project, version, digest: `sha256:${a.sha256}`, registry_url: params.server,
 			repository: project, path,
-			// debug=1 is the only download returning the uploaded bytes verbatim -- buildhost strips and repackages on demand.
+			// debug=1 is the only download returning the uploaded bytes verbatim -- buildhost strips and repackages on demand. origin/master
 			artifact_url: `${dl}/${project}?v=${encodeURIComponent(version)}&os=${a.os ?? ''}&arch=${a.arch ?? ''}&debug=1`,
 		});
 	}
