@@ -44,6 +44,9 @@ SELECT pa.storage_key, pa.size FROM packaged_artifacts pa JOIN artifacts a ON pa
 -- name: DeleteReleasePackagedArtifacts :exec
 DELETE FROM packaged_artifacts WHERE artifact_id IN (SELECT id FROM artifacts WHERE release_id = ?);
 
+-- name: DeleteReleaseDownloadEvents :exec
+DELETE FROM download_events WHERE artifact_id IN (SELECT id FROM artifacts WHERE release_id = ?);
+
 -- name: DeleteReleaseDownloadCounts :exec
 DELETE FROM download_counts WHERE artifact_id IN (SELECT id FROM artifacts WHERE release_id = ?);
 
