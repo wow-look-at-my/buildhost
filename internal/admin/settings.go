@@ -21,9 +21,8 @@ type settingRow struct {
 	// Value is the effective value. It is empty for a secret.
 	Value string `json:"value"`
 	// Set reports a non-empty effective value. It is the only signal for a secret.
-	Set            bool   `json:"set"`
-	Source         string `json:"source"`
-	RestartPending bool   `json:"restart_pending"`
+	Set    bool   `json:"set"`
+	Source string `json:"source"`
 	// Fingerprint identifies a stored key without its value, as GitHub shows it.
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// Problem says why a set value cannot work.
@@ -34,7 +33,7 @@ func settingRows() []settingRow {
 	rows := make([]settingRow, 0, len(config.Settings))
 	for _, st := range config.Settings {
 		v := config.Getenv(st.Name)
-		row := settingRow{Setting: st, Set: v != "", Source: config.Source(st.Name), RestartPending: config.RestartPending(st)}
+		row := settingRow{Setting: st, Set: v != "", Source: config.Source(st.Name)}
 		if !st.Secret() {
 			row.Value = v
 		}
@@ -74,18 +73,10 @@ func (s *Server) apiSetSetting(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `want {"value": "..."}`, http.StatusBadRequest)
 		return
 	}
-	if err := config.CheckValue(st, *body.Value); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	value := *body.Value
-	if !st.Secret() || st.Kind == config.KindPEM {
-		value = strings.TrimSpace(value)
-	}
-	if strings.TrimSpace(value) == "" {
-		value = ""
-	}
-	if err := s.checkStartup(r, st.Name, &value); err != nil {
+	value := storedForm(st, *body.Value)
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	if _, err := config.CheckChange(st.Name, &value); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -94,6 +85,51 @@ func (s *Server) apiSetSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reloadSettings(w, r)
+}
+
+// storedForm returns value as a save stores it.
+func storedForm(st config.Setting, value string) string {
+	if !st.Secret() || st.Kind == config.KindPEM {
+		value = strings.TrimSpace(value)
+	}
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return value
+}
+
+// apiValidateSetting (POST /api/settings/{name}/validate) checks {"value":
+// "..."} as a save does, and stores nothing. A null value checks a Clear. The
+// page calls it while the operator types.
+func (s *Server) apiValidateSetting(w http.ResponseWriter, r *http.Request) {
+	st, ok := config.LookupSetting(r.PathValue("name"))
+	if !ok {
+		http.Error(w, "unknown setting", http.StatusNotFound)
+		return
+	}
+	var body struct {
+		Value *string `json:"value"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettingBody)).Decode(&body); err != nil {
+		http.Error(w, `want {"value": "..."} or {"value": null}`, http.StatusBadRequest)
+		return
+	}
+	if body.Value != nil {
+		v := storedForm(st, *body.Value)
+		body.Value = &v
+	}
+	res := struct {
+		OK      bool   `json:"ok"`
+		Error   string `json:"error,omitempty"`
+		Warning string `json:"warning,omitempty"`
+	}{}
+	warning, err := config.CheckChange(st.Name, body.Value)
+	if err != nil {
+		res.Error = err.Error()
+	} else {
+		res.OK, res.Warning = true, warning
+	}
+	s.writeJSON(w, res)
 }
 
 // apiDeleteSetting (DELETE /api/settings/{name}) falls back to the environment, then the default.
@@ -107,7 +143,9 @@ func (s *Server) apiDeleteSetting(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSetting(w http.ResponseWriter, r *http.Request, st config.Setting) {
-	if err := s.checkStartup(r, st.Name, nil); err != nil {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	if _, err := config.CheckChange(st.Name, nil); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -118,8 +156,8 @@ func (s *Server) deleteSetting(w http.ResponseWriter, r *http.Request, st config
 	s.reloadSettings(w, r)
 }
 
-// reloadSettings makes the stored values visible to config.Getenv. A Live
-// setting applies at once. The others apply at the next start.
+// reloadSettings puts the stored values in use. config.Reload gives the new
+// configuration to each part of the running server, so no restart is needed.
 func (s *Server) reloadSettings(w http.ResponseWriter, r *http.Request) {
 	stored, err := s.db.ServerSettings(r.Context())
 	if err != nil {
@@ -127,32 +165,13 @@ func (s *Server) reloadSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	config.SetStored(stored)
+	c := config.Reload()
+	s.live.Store(&c)
+	slog.Info("settings changed from the admin dashboard", "path", r.URL.Path)
 	s.writeSettings(w)
 }
 
-// checkStartup refuses a change after which the server would not start. A
-// server that cannot start also takes the dashboard down with it. A nil value
-// removes the stored value.
-func (s *Server) checkStartup(r *http.Request, name string, value *string) error {
-	stored, err := s.db.ServerSettings(r.Context())
-	if err != nil {
-		return err
-	}
-	if value == nil {
-		delete(stored, name)
-	} else {
-		stored[name] = *value
-	}
-	settingsMu.Lock()
-	defer settingsMu.Unlock()
-	config.SetStored(stored)
-	err = config.Load().Validate()
-	prev, _ := s.db.ServerSettings(r.Context())
-	config.SetStored(prev)
-	return err
-}
-
-// settingsMu serializes the trial swap of the stored values in checkStartup.
+// settingsMu makes the check, the store and the reload of one change a single step.
 var settingsMu sync.Mutex
 
 func (s *Server) settingsError(w http.ResponseWriter, r *http.Request, err error) {

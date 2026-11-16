@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/admin"
@@ -19,6 +20,9 @@ import (
 )
 
 var healthDB *db.DB
+
+// applyOnce registers auth.ApplyConfig for a settings change one time.
+var applyOnce sync.Once
 
 // The update-check contract docker-updater probes on the container's own port,
 const (
@@ -57,6 +61,7 @@ func New(cfg config.Config, database *db.DB, store storage.Storage) *Server {
 		slog.Error("GitHub App auth disabled (default-branch lookups degrade to PAT/anonymous)", "err", err)
 	}
 	healthDB = database
+	applyOnce.Do(func() { config.OnChange(auth.ApplyConfig) })
 
 	health := func(w http.ResponseWriter, r *http.Request) {
 		resp := healthResponse{
