@@ -24,6 +24,7 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/liveapply"
 	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
@@ -81,11 +82,11 @@ var serveCmd = &cobra.Command{
 			slog.Info("set GOMEMLIMIT from cgroup", "bytes", limit)
 		}
 
-		tel := &liveTelemetry{}
-		if err := tel.apply(cfg.OTELEndpoint); err != nil {
+		tel := &liveapply.Telemetry{}
+		if err := tel.Apply(cfg.OTELEndpoint); err != nil {
 			return fmt.Errorf("init telemetry: %w", err)
 		}
-		defer tel.shutdown()
+		defer tel.Shutdown()
 
 		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
@@ -132,8 +133,8 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
-		gh := &liveGitHub{ctx: ctx}
-		if err := gh.apply(cfg); err != nil {
+		gh := &liveapply.GitHub{Ctx: ctx}
+		if err := gh.Apply(cfg); err != nil {
 			return err
 		}
 		// A saved setting takes effect here. Nothing below reads cfg for a value the dashboard can change.
@@ -141,10 +142,10 @@ var serveCmd = &cobra.Command{
 		interval := cfg.RetentionInterval
 		config.OnChange(func(c config.Config) {
 			fsStore.SetCompress(c.StorageCompress)
-			if err := tel.apply(c.OTELEndpoint); err != nil {
+			if err := tel.Apply(c.OTELEndpoint); err != nil {
 				slog.Error("telemetry: the new endpoint is not in use", "endpoint", c.OTELEndpoint, "err", err)
 			}
-			if err := gh.apply(c); err != nil {
+			if err := gh.Apply(c); err != nil {
 				slog.Error("GitHub credential: the new settings are not in use", "err", err)
 			}
 			if c.RetentionInterval != interval {

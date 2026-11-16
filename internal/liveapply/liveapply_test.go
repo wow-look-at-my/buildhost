@@ -3,6 +3,8 @@ package liveapply
 import (
 	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,15 +48,15 @@ func TestTelemetryFollowsTheEndpoint(t *testing.T) {
 	require.NoError(t, tel.Apply(""))
 	assert.Nil(t, tel.stop, "no endpoint, no export")
 
-	// Nothing listens here. The exporter connects when it sends, not at Init.
-	require.NoError(t, tel.Apply("http://127.0.0.1:1"))
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(collector.Close)
+	require.NoError(t, tel.Apply(collector.URL))
 	require.NotNil(t, tel.stop)
 	assert.NotSame(t, base, slog.Default(), "the log also goes to the endpoint")
-	stop := tel.stop
+	withExport := slog.Default()
 
-	require.NoError(t, tel.Apply("http://127.0.0.1:1"))
-	assert.NotNil(t, stop)
-	assert.Equal(t, "http://127.0.0.1:1", tel.endpoint, "the same endpoint keeps its exporter")
+	require.NoError(t, tel.Apply(collector.URL))
+	assert.Same(t, withExport, slog.Default(), "the same endpoint keeps its exporter")
 
 	require.NoError(t, tel.Apply(""))
 	assert.Nil(t, tel.stop, "an empty endpoint stops the export at once")
