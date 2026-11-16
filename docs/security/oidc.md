@@ -12,7 +12,7 @@ Allowlists gate this path. `BUILDHOST_OIDC_ORGS` is the org allowlist. It matche
 
 All default events imply write access to the repo. A push comes from a member. A fork PR gets no OIDC token, so `pull_request` means a same-repo PR. Only a user with repo write access can trigger a manual `workflow_dispatch` run.
 
-The project name comes from the subject claim (`repo:org/name:*` gives `name`). It is lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. A leading run of `.`, `_` or `-` is dropped first, so repo `.github` owns project `github`. The token is authorized to read and write that repo's whole namespace. That namespace is project `R` plus any slash-namespaced `R/<...>` beneath it. A trailing-slash boundary gates the match, so a sibling prefix such as `R-evil` is refused.
+The project name comes from the subject claim (`repo:org/name:*` gives `name`). It is lowercased and validated against `[a-z0-9][a-z0-9._-]{0,127}`. A leading run is dropped first, so repo `.github` owns project `github`. The token is authorized to read and write that repo's whole namespace. That namespace is project `R` plus any slash-namespaced `R/<...>` beneath it. A trailing-slash boundary gates the match, so a sibling prefix such as `R-evil` is refused.
 
 An unrelated project is refused too, except for the actor read below. `requireProject` validates an auto-created namespaced name per segment before it creates the project.
 
@@ -22,7 +22,7 @@ The read is refused. A `read` permission or higher allows the read. No buildhost
 
 A token from another issuer never reaches GitHub. Writes stay confined to the identity's own namespace. This is what lets CI in one repo install a private tool that another repo publishes, when the person who started. The run can read that repo.
 
-**Provisioning is write-only.** `requireProject` creates a missing project only for a `WriteAccess` route. Those routes are the publish POST and PUT flow, the docker push, and the site deploy. A read never provisions. `ReadAccess` and `HiddenReadAccess` cover `dl`, `static`, `apt`, `brew`, `npm` and the web frontend. A GET returns 404 instead.
+**Provisioning is write-only.** `requireProject` creates a missing project only for a `WriteAccess` route. Those routes are the publish POST and PUT flow, the docker push, and the site deploy. A read never provisions. A GET returns 404 instead.
 
 As a result, a read can never materialize a project as a side effect.
 
@@ -46,7 +46,7 @@ The default set holds only events that imply the actor has write access to the r
 
 A GitHub owner name and repo name are reusable. A stranger can delete or rename a repo, re-register the name, and mint a valid OIDC token for the same `owner/repo`. GitHub's numeric IDs are not reusable. An immutable subject claim therefore carries them (`repo:OWNER@OWNERID/REPO@REPOID:...`), for a repo created after the immutable-subject rollout. The long-standing `repository_id` and `repository_owner_id` claims carry them too.
 
-Verification prefers the dedicated claims (`repository`, `repository_owner`, and the `*_id` pair) over subject parsing. It falls back to the subject's `@id` suffixes (`splitImmutableID`). A name still matches an allowlist and a project. A classic subject parses byte-identically.
+Verification prefers the dedicated claims over subject parsing. It falls back to the subject's `@id` suffixes (`splitImmutableID`). A name still matches an allowlist and a project. A classic subject parses byte-identically.
 
 The middleware pins the IDs on the project (`projects.github_owner_id` and `github_repo_id`, migration 014). It records them at provisioning. For a pre-existing project it records them on the first ID-bearing PUBLISH, which is trust on first use. A read never mutates them.
 

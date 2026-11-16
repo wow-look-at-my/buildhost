@@ -11,7 +11,9 @@ buildhost bootstrap --name admin-token
 
 ## Settings
 
-The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Saving an empty value stores an empty override. Clear removes the stored value, so the environment and then the default apply again. The GitHub App private key takes PEM text or a `.pem` file. A key that does not parse is refused and the previous value stays. The page shows the stored key's SHA-256 fingerprint, the same one GitHub lists for the App. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
+The admin dashboard's **Settings** page lists every `BUILDHOST_*` variable, with where its value comes from. A value saved there lives in the `server_settings` table and takes precedence over the environment. Saving an empty value stores an empty override. Clear removes the stored value, so the environment and then the default apply again. The GitHub App private key takes PEM text or a `.pem` file. A key that does not parse is refused and the previous value stays.
+
+The page shows the stored key's SHA-256 fingerprint, the same one GitHub lists for the App. `config.Settings` is the list. A test fails when the server reads a variable it does not list.
 
 - A saved setting applies at once. No setting on the page needs a restart. `config.Reload` loads the configuration again. It gives it to each `config.OnChange` function: the auth layer, the Go proxy, the GitHub credential, telemetry, the blob store and the retention sweeper. The janitors read `config.Current` before each sweep.
 - The page checks a value while the operator types. `POST /api/settings/{name}/validate` on the admin port runs the same check as a save and stores nothing. An error shows under the field and turns Save off. A warning names a state that saves but does not work yet, such as an App id with no private key.
