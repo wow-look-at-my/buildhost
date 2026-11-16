@@ -18,7 +18,7 @@ import (
 func (s *Server) apiBackup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// The snapshot goes beside the database: the same filesystem is known.
-	dir, err := os.MkdirTemp(filepath.Dir(s.cfg.DBPath), "backup-")
+	dir, err := os.MkdirTemp(filepath.Dir(s.conf().DBPath), "backup-")
 	if err != nil {
 		slog.ErrorContext(ctx, "backup failed: temp dir", "error", err)
 		http.Error(w, "backup failed: "+err.Error(), http.StatusInternalServerError)

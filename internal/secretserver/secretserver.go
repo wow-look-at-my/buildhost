@@ -61,6 +61,9 @@ func LastStatus() Status {
 	return status
 }
 
+// ClearStatus records that no machine token is in use.
+func ClearStatus() { setStatus(Status{}) }
+
 func setStatus(s Status) {
 	statusMu.Lock()
 	status = s

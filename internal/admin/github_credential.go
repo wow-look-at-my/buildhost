@@ -13,7 +13,7 @@ import (
 // configProblems lists the settings that are set but cannot work. Every page shows them in a banner.
 func (s *Server) configProblems() []string {
 	problems := []string{}
-	if p := s.cfg.GitHubAppProblem(); p != "" {
+	if p := s.conf().GitHubAppProblem(); p != "" {
 		problems = append(problems, p)
 	}
 	return problems
@@ -23,13 +23,13 @@ func (s *Server) configProblems() []string {
 func (s *Server) apiGitHubCredential(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, map[string]any{
 		"source":         auth.GitHubCredentialSource(),
-		"env_credential": s.cfg.GitHubToken != "" || s.cfg.HasGitHubApp(),
+		"env_credential": s.conf().GitHubToken != "" || s.conf().HasGitHubApp(),
 		"secret_server":  secretserver.LastStatus(),
 		"github_api":     auth.GitHubAPI,
-		"token_set":      s.cfg.GitHubToken != "",
-		"app_id_set":     s.cfg.GitHubAppID != "",
-		"app_key_set":    s.cfg.GitHubAppPrivateKey != "",
-		"app_problem":    s.cfg.GitHubAppProblem(),
+		"token_set":      s.conf().GitHubToken != "",
+		"app_id_set":     s.conf().GitHubAppID != "",
+		"app_key_set":    s.conf().GitHubAppPrivateKey != "",
+		"app_problem":    s.conf().GitHubAppProblem(),
 		"app_error":      auth.GitHubAppLastError(),
 	})
 }

@@ -1,3 +1,5 @@
+// download_events.go holds ListDownloadEventsByProject.
+
 package db
 
 import "context"
