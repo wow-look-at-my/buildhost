@@ -15,7 +15,7 @@ The caller presents the job's token of the GitHub Actions OIDC, minted with the 
 
 A static API token names no run. As a result, it is refused.
 
-The request also names the run as `repository`, `run_id` and `run_attempt`. A request that names another run than its token is refused with 403, rather than served from the token's run.
+A request that names another run than its token is refused with 403, rather than served from the token's run.
 
 ## Endpoints
 

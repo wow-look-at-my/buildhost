@@ -22,7 +22,6 @@ func init() {
 	auth.OnReady(func() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
-		handler.FetchDomains = auth.SiteFetchDomains()
 		handler.TmpDir = auth.DataDir() + "/tmp"
 	})
 	// Config-conditional {project}.<site-domain> scheme (see subdomain.go).

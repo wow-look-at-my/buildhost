@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
@@ -29,30 +30,39 @@ var (
 	sharedOIDCOrgs            []string
 )
 
+var sharedMu sync.RWMutex
+
+func readShared[T any](v *T) T {
+	sharedMu.RLock()
+	defer sharedMu.RUnlock()
+	return *v
+}
+
 // OIDCOrgs are the GitHub orgs this deployment accepts OIDC from. Other backends
-func OIDCOrgs() []string { return sharedOIDCOrgs }
+func OIDCOrgs() []string { return readShared(&sharedOIDCOrgs) }
 
 func Router() *router.Router      { return mux }
 func DB() *db.DB                  { return sharedDB }
 func Store() storage.Storage      { return sharedStore }
 func DataDir() string             { return sharedData }
 func GetMiddleware() *Middleware  { return mw }
-func SiteFetchDomains() []string  { return sharedFetchDomains }
-func GitHubWebhookSecret() string { return sharedGitHubWebhookSecret }
+func SiteFetchDomains() []string  { return readShared(&sharedFetchDomains) }
+func GitHubWebhookSecret() string { return readShared(&sharedGitHubWebhookSecret) }
 
 // SiteDomain is the optional dedicated domain for project static sites
-func SiteDomain() string { return sharedSiteDomain }
+func SiteDomain() string { return readShared(&sharedSiteDomain) }
 
 // PrimaryDomain is the apex carrying the GitHub OAuth callback (BUILDHOST_PRIMARY_DOMAIN); "" when unset.
-func PrimaryDomain() string { return sharedPrimaryDomain }
+func PrimaryDomain() string { return readShared(&sharedPrimaryDomain) }
 
 // PinnedPrimaryDomain is PrimaryDomain reduced to an actually-addressable
 // host, or "" when no single host is canonical.
 func PinnedPrimaryDomain() string {
-	if sharedPrimaryDomain == config.PrimaryDomainAny {
+	pd := PrimaryDomain()
+	if pd == config.PrimaryDomainAny {
 		return ""
 	}
-	return sharedPrimaryDomain
+	return pd
 }
 
 // OnReady runs fn once auth.Init has wired the shared dependencies (DB,
@@ -80,19 +90,8 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	sharedDB = database
 	sharedStore = store
 	sharedData = dataDir
-	sharedFetchDomains = siteFetchDomains
-	sharedGitHubWebhookSecret = githubWebhookSecret
-	sharedOIDCOrgs = allowedOrgs
-	sharedSiteDomain = strings.ToLower(strings.Trim(siteDomain, " ."))
-	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
-
 	initDownloadSecret(dataDir)
-	// Config-conditional families (the /__sso handoff, the {project}.<site-domain>
-	if sharedSiteDomain != "" {
-		for _, fn := range siteDomainFuncs {
-			fn(sharedSiteDomain)
-		}
-	}
+	setShared(siteFetchDomains, allowedOrgs, githubWebhookSecret, siteDomain, primaryDomain)
 
 	mw = &Middleware{
 		DB: database,
@@ -105,6 +104,64 @@ func Init(database *db.DB, store storage.Storage, dataDir string, trustedIssuers
 	}
 	for _, fn := range readyFuncs {
 		fn()
+	}
+}
+
+// setShared replaces the shared settings. It registers the routes of a site
+// domain before a request can see that domain.
+func setShared(fetchDomains, oidcOrgs []string, webhookSecret, siteDomain, primaryDomain string) {
+	siteDomain = strings.ToLower(strings.Trim(siteDomain, " ."))
+	// Config-conditional families (the /__sso handoff, the {project}.<site-domain>
+	if siteDomain != "" {
+		for _, fn := range siteDomainFuncs {
+			fn(siteDomain)
+		}
+	}
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	sharedFetchDomains = fetchDomains
+	sharedGitHubWebhookSecret = webhookSecret
+	sharedOIDCOrgs = oidcOrgs
+	sharedSiteDomain = siteDomain
+	sharedPrimaryDomain = strings.ToLower(strings.Trim(primaryDomain, " ."))
+}
+
+// ApplyConfig makes a changed configuration take effect with no restart. Call
+// it after Init. The OIDC key cache and a GitHub sign-in with the same client
+// stay in place.
+func ApplyConfig(cfg config.Config) {
+	setShared(cfg.SiteFetchDomains, cfg.OIDCOrgs, cfg.GitHubWebhookSecret, cfg.SiteDomain, cfg.PrimaryDomain)
+	if mw == nil {
+		return
+	}
+	if mw.Verifier != nil {
+		mw.Verifier.SetPolicy(OIDCConfig{TrustedIssuers: cfg.OIDCIssuers, AllowedOrgs: cfg.OIDCOrgs, AllowedEvents: cfg.OIDCEvents})
+	}
+	next := NewGitHubAuth(cfg.GitHubClientID, cfg.GitHubClientSecret)
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	if cur := mw.GitHub; cur == nil || next == nil || cur.clientID != next.clientID || cur.clientSecret != next.clientSecret {
+		mw.GitHub = next
+	}
+}
+
+// github returns the GitHub sign-in in use, or nil.
+func (m *Middleware) github() *GitHubAuth {
+	return readShared(&m.GitHub)
+}
+
+// onSiteDomain serves h only while domain is the configured site domain. A
+// route stays registered after the setting changes.
+func onSiteDomain(domain string, h http.HandlerFunc) http.HandlerFunc {
+	if domain == SiteDomainPlaceholder {
+		return h
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		if SiteDomain() != domain {
+			http.NotFound(w, r)
+			return
+		}
+		h(w, r)
 	}
 }
 
@@ -192,11 +249,11 @@ func siteDomainPattern(domain, pattern string) string {
 // SiteDomainHandle registers a project-auth'd route on the {project}.<domain>
 // scheme, the site-domain sibling of ServiceHandle. domain must be a literal
 func SiteDomainHandle(domain, pattern string, parse ParseFunc, handler http.HandlerFunc) {
-	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, requireProjectFunc(parse, handler))
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, onSiteDomain(domain, requireProjectFunc(parse, handler)))
 }
 
 func SiteDomainHandleRaw(domain, pattern string, handler http.HandlerFunc) {
-	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, handler)
+	mux.HandleFunc(siteDomainPattern(domain, pattern), router.Allow, onSiteDomain(domain, handler))
 }
 
 func ServiceHandle(subdomain, pattern string, parse ParseFunc, handler http.HandlerFunc) {

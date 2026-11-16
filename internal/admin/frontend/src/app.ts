@@ -31,6 +31,7 @@ import type {
     MirrorReleaseAssetRow,
     MirrorTagRow,
     ServiceURLs,
+    SettingCheck,
     SettingRow,
     SettingsData,
     SidebarData,
@@ -162,7 +163,7 @@ const renderBanner = function (problems: string[]): void {
     var el = document.getElementById("banner")!;
     el.hidden = problems.length === 0;
     el.innerHTML = problems.map(function (p) {
-        return "<p>" + h(p) + ' &mdash; fix it on the <a href="#/settings">Settings</a> page, then restart.</p>';
+        return "<p>" + h(p) + ' &mdash; fix it on the <a href="#/settings">Settings</a> page.</p>';
     }).join("");
 };
 
@@ -1909,13 +1910,13 @@ const demoData: Record<string, unknown> = {
     "/settings": {
         can_restart: true,
         settings: [
-            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
-            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
-            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: false, fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
-            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
-            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
-            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
-            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
+            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, value: "example.com", set: true, source: "environment" },
+            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, value: "", set: true, source: "dashboard" },
+            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, value: "", set: true, source: "dashboard", fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
+            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, value: "", set: false, source: "default" },
+            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, value: "", set: false, source: "default" },
+            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, value: "4G", set: true, source: "dashboard" },
+            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, value: "/data", set: true, source: "environment" }
         ]
     },
     "/retention": {
@@ -2427,7 +2428,7 @@ const gitHubCredentialHTML = function (d: GitHubCredentialData): string {
     } else if (d.source === "token") {
         head = "<p><strong>Working.</strong> buildhost signs its GitHub calls with a token" + (d.token_set ? " from <code>BUILDHOST_GITHUB_TOKEN</code>" : " that secret-server vended") + ".</p>";
     } else if (d.app_problem) {
-        head = '<p class="error"><strong>Not working.</strong> ' + h(d.app_problem) + ". Fix it on the " + settings + " page, then restart.</p>";
+        head = '<p class="error"><strong>Not working.</strong> ' + h(d.app_problem) + ". Fix it on the " + settings + " page.</p>";
     } else if (ss.configured && !ss.ok) {
         head = '<p class="error"><strong>Not working.</strong> The secret-server fetch failed' + (ss.at ? " at " + h(ss.at) : "") + ": " + h(ss.error || "no error text") + ". buildhost retries every minute.</p>";
     } else {
@@ -2463,14 +2464,9 @@ pages.settings = function (): void {
 const SETTING_SOURCE_BADGE: Record<string, string> = { dashboard: "badge-info", environment: "badge-neutral", default: "badge-neutral" };
 
 const renderSettings = function (d: SettingsData): void {
-    const pending = d.settings.filter((s) => s.restart_pending);
     let html = "<h1>Settings</h1>";
     html += '<div class="card"><p class="muted">A value saved here takes precedence over the environment variable of the same name. Saving an empty field stores an empty value. Clear removes the saved value, so the environment and then the default apply again. ' +
-        "Upload limits apply at once. Every other setting applies when the server restarts. A change after which the server would not start is refused.</p>";
-    if (pending.length) {
-        html += '<p class="error">' + h(pending.length) + " saved setting" + (pending.length === 1 ? " waits" : "s wait") + " for a restart: " +
-            pending.map((s) => "<code>" + h(s.name) + "</code>").join(", ") + ".</p>";
-    }
+        "A saved setting applies at once, with no restart. The page checks a value while you type and says what is wrong with it before you save. A change the server cannot run with is refused.</p>";
     if (d.can_restart) {
         html += '<p><button class="btn btn-danger" id="settings-restart">Restart server</button> <span class="muted">Finishes in-flight requests, then exits so the container restart policy starts it again.</span></p>';
     }
@@ -2490,8 +2486,20 @@ const renderSettings = function (d: SettingsData): void {
             return;
         }
         const input = f.querySelector<HTMLInputElement | HTMLTextAreaElement>(".form-input")!;
+        const initial = input.value;
+        let timer = 0;
+        input.addEventListener("input", function () {
+            clearTimeout(timer);
+            // An untouched field has nothing to check. An empty secret field means "keep the stored value".
+            if (input.value === initial || (f.dataset.secret === "1" && input.value.trim() === "")) {
+                showSettingCheck(f, { ok: true });
+                return;
+            }
+            timer = setTimeout(function () { validateSetting(f, input.value); }, SETTING_CHECK_DELAY_MS);
+        });
         f.addEventListener("submit", function (e) {
             e.preventDefault();
+            clearTimeout(timer);
             if (input.value.trim() === "" && f.dataset.secret === "1" &&
                 !confirm("Save an EMPTY value for " + f.dataset.setting + "? It replaces the stored value and overrides the environment. Use Clear to fall back to the environment instead.")) return;
             saveSetting(f.dataset.setting!, "PUT", input.value, f);
@@ -2511,15 +2519,50 @@ const renderSettings = function (d: SettingsData): void {
         }
     });
     document.querySelectorAll<HTMLButtonElement>("button[data-clear]").forEach(function (b) {
-        b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null); });
+        b.addEventListener("click", function () { saveSetting(b.dataset.clear!, "DELETE", null, b.closest("form") ?? undefined); });
     });
     document.getElementById("settings-restart")?.addEventListener("click", restartServer);
+};
+
+const SETTING_CHECK_DELAY_MS = 250;
+
+// One box for what stops a save, one for what a save leaves not working.
+const SETTING_CHECK_BOXES = '<div class="settings-error error" hidden></div><div class="settings-warning" hidden></div>';
+
+// showSettingCheck puts a check result under the field. Save is off while the value has an error.
+const showSettingCheck = function (f: HTMLFormElement, res: SettingCheck): void {
+    const err = f.querySelector<HTMLElement>(".settings-error")!;
+    const warn = f.querySelector<HTMLElement>(".settings-warning")!;
+    err.textContent = res.error ?? "";
+    err.hidden = !res.error;
+    warn.textContent = res.warning ? "Saves, but: " + res.warning : "";
+    warn.hidden = !res.warning;
+    const save = f.querySelector<HTMLButtonElement>("button[type=submit]");
+    if (save) save.disabled = !!res.error;
+    f.querySelector<HTMLElement>(".form-input")?.classList.toggle("form-input-invalid", !!res.error);
+};
+
+// validateSetting asks the server to check a value the way a save does. It stores nothing.
+const validateSetting = function (f: HTMLFormElement, value: string): void {
+    const input = f.querySelector<HTMLInputElement | HTMLTextAreaElement>(".form-input")!;
+    fetch("/api/settings/" + encodeURIComponent(f.dataset.setting!) + "/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value: value })
+    }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { throw new Error(t.trim() || "HTTP " + res.status); });
+        return res.json().then(function (check: SettingCheck) {
+            // The operator typed more while the request ran. A later check covers that text.
+            if (input.value === value) showSettingCheck(f, check);
+        });
+    }).catch(function (e) {
+        if (input.value === value) showSettingCheck(f, { ok: true, warning: "this value was not checked (" + (e instanceof Error ? e.message : String(e)) + "). Save checks it." });
+    });
 };
 
 const settingRowHTML = function (s: SettingRow): string {
     const secret = s.kind === "secret" || s.kind === "pem";
     let html = '<tr><td class="settings-name"><code>' + h(s.name) + '</code> <span class="badge ' + (SETTING_SOURCE_BADGE[s.source] ?? "badge-neutral") + '">' + h(s.source) + "</span>";
-    if (s.restart_pending) html += ' <span class="badge badge-warning">restart pending</span>';
     html += '<div class="muted">' + h(s.description) + (s.default ? " Default: <code>" + h(s.default) + "</code>." : "") + "</div></td><td>";
     if (s.env_only) {
         html += "<code>" + h(s.value || "(empty)") + '</code><div class="muted">Environment only.</div>';
@@ -2533,7 +2576,7 @@ const settingRowHTML = function (s: SettingRow): string {
             const v = s.value || s.default;
             const on = v === "true" || v === "1";
             html += '<form class="settings-form"' + attrs + '><label class="settings-check"><input type="checkbox" data-bool="' + h(s.name) + '"' + (on ? " checked" : "") + "> " + (on ? "on" : "off") + "</label>" + clear +
-                '<div class="settings-error error" hidden></div></form>';
+                SETTING_CHECK_BOXES + "</form>";
         } else if (s.kind === "pem") {
             if (s.fingerprint) html += '<div>Stored key: <code>' + h(s.fingerprint) + '</code> <span class="muted">(GitHub shows the same fingerprint next to the key on the App settings page)</span></div>';
             if (s.problem) html += '<div class="error">The stored value does not work: ' + h(s.problem) + "</div>";
@@ -2541,11 +2584,11 @@ const settingRowHTML = function (s: SettingRow): string {
                 '<textarea class="form-input settings-pem" rows="6" spellcheck="false" autocomplete="off" placeholder="' + h(placeholder + ". Paste -----BEGIN RSA PRIVATE KEY----- ..., or choose the .pem file") + '"></textarea>' +
                 '<div class="settings-pem-hint muted"></div>' +
                 '<div class="settings-form-actions"><input type="file" accept=".pem,.key,text/plain">' + save + clear + "</div>" +
-                '<div class="settings-error error" hidden></div></form>';
+                SETTING_CHECK_BOXES + "</form>";
         } else {
             html += '<form class="settings-form"' + attrs + '><input class="form-input" type="' + (secret ? "password" : "text") +
                 '" autocomplete="off" value="' + h(secret ? "" : s.value) + '" placeholder="' + h(placeholder) + '">' + save + clear +
-                '<div class="settings-error error" hidden></div></form>';
+                SETTING_CHECK_BOXES + "</form>";
         }
     }
     return html + "</td></tr>";
@@ -2572,6 +2615,9 @@ const saveSetting = function (name: string, method: "PUT" | "DELETE", value: str
             if (!box) { alert("Not saved: " + t); return; }
             box.textContent = "Not saved, the previous value stays: " + t.trim();
             box.hidden = false;
+            // A checkbox saves on its change, so a refused save puts it back.
+            const check = form?.querySelector<HTMLInputElement>("input[data-bool]");
+            if (check && method === "PUT") check.checked = !check.checked;
         });
         return res.json().then(renderSettings);
     }).catch(function (e) { alert(failText("save", e)); });

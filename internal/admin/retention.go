@@ -188,8 +188,8 @@ func (s *Server) retentionResponse(settings db.RetentionSettings, preview retent
 		"recency_hours":       settings.RecencyHours,
 		"deleted_branch_days": settings.DeletedBranchDays,
 		// The background sweeper is deploy-level config the dashboard cannot change.
-		"sweeper_enabled": s.cfg.RetentionInterval > 0,
-		"sweeper_enforce": s.cfg.RetentionEnforce,
+		"sweeper_enabled": s.conf().RetentionInterval > 0,
+		"sweeper_enforce": s.conf().RetentionEnforce,
 		"preview":         reportJSON(preview),
 	}
 }

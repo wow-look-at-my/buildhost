@@ -2,13 +2,13 @@
 
 `internal/retention/`. Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed. See also `docs/eviction-policies.md`, on why there is no repackage-cache eviction, and `docs/artifact-storage-records.md`, on how eviction retracts what it published.
 
-Eviction policy + reference-counted garbage collection. Keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases per `(project, git_branch)` and sweeps abandoned (unpublished) uploads, then deletes content-addressed blobs no longer referenced by anything (the global `db.IsBlobReferenced`, generalizing `BlobBelongsToProject`).
+Eviction policy and reference-counted garbage collection. Keeps the latest `BUILDHOST_RETENTION_KEEP_N` published releases per `(project, git_branch)` and sweeps abandoned (unpublished) uploads, then deletes content-addressed blobs no longer referenced by anything (the global `db.IsBlobReferenced`, generalizing `BlobBelongsToProject`).
 
 The whole eviction runs in one `db.EvictReleases` transaction. It is **rolled back for a dry-run and committed for an enforce**. Report-only and enforce therefore produce same exact results. A blob shared by several evicted releases is freed once. This is the single source of truth for the background sweeper (`cmd/buildhost/serve.go`), the `buildhost gc` CLI, and the **admin dashboard Retention page**.
 
 The policy, keep-N and the recency guard, is **DB-backed and UI-editable**. It is stored in the single-row `retention_settings` table. `SeedRetentionSettings` seeds it from the `BUILDHOST_RETENTION_*` env defaults on first start, with an INSERT OR IGNORE. The dashboard manages it after that. The sweeper and the CLI read it live on each run through `db.GetRetentionSettings` and `retention.ConfigFromSettings`.
 
-The admin endpoints are in `internal/admin/retention.go`: `GET/PUT /api/retention` and `POST /api/retention/run`. They expose the policy, a dry-run preview (`Plan`) and an on-demand enforce. An ENFORCING on-demand run 409s while writes are in flight. It uses the same `admin.InflightWrites` guard the background sweeper uses. As a result, it cannot free a blob a mid-flight hash-reference upload just validated. A report-only run is always allowed.
+The admin endpoints are. They expose the policy, a dry-run preview (`Plan`) and an on-demand enforce. An ENFORCING on-demand run 409s while writes are in flight. It uses the same `admin.InflightWrites` guard the background sweeper uses. As a result, it cannot free a blob a mid-flight hash-reference upload just validated. A report-only run is always allowed.
 
 `keep_n=0` still keeps each branch tip, because the keep-N query floors at `max(keep_n, 1)`.
 
@@ -30,7 +30,7 @@ Inside a deleted branch nothing is pinned: the tip, drafts, OCI tags and docker 
 
 A reclaimable total says how much comes back. It never says what holds the rest. `GET /api/retention/inventory` on the admin port answers that. It returns one entry per stored file, plus the pins that keep it. The Retention page has a **Copy file inventory (JSON)** button and a **Download file inventory (JSON)** button. Both fetch this endpoint and hand you the whole document.
 
-`retention.Inventory` builds it. It reads every table that references a blob. Those are `artifacts` (raw, stripped and debug keys), `packaged_artifacts`, `sites`, `oci_blob_links`, `goproxy_versions`, `run_files` and `cache_entries`. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
+`retention.Inventory` builds it. It reads every table that references a blob. It emits one entry per reference. Each entry carries the storage key, sha256, size, timestamp, project, version, branch, platform, kind and filename. `refs` counts the rows that share that storage key.
 
 A blob with multiple references therefore frees nothing until both releases go.
 
@@ -45,7 +45,6 @@ Each entry carries `holds`, every pin that applies, most permanent first, and `h
 | `docker` | a pushed-docker release |
 | `draft` | a deliberate draft, never swept |
 | `shared-blob` | the release goes, another row still references the bytes |
-| `site`, `oci-blob`, `goproxy` | not release-scoped, so eviction never frees it |
 | `run-file` | a CI run's hand-off, which `internal/runfiles` deletes after the run (`docs/run-files.md`) |
 | `cache` | a CI cache entry, which `internal/cicache` evicts when unused or under disk pressure (`docs/cache.md`) |
 
