@@ -12,7 +12,7 @@ This document lives at `__BASE_URL__/llms.txt` and is written for LLMs and autom
 ## Core concepts
 
 - **Project**: a named container for releases (for example, `myapp`). Project names match `[a-z0-9][a-z0-9._-]{0,127}` and may contain `/` for grouping.
-- **Release**: one version of a project. Versions auto-increment by default (`1`, `2`, `3`, ...) or use semver if the project opts in.
+- **Release**: one version of a project. Versions auto-increment by default or use semver if the project opts in.
 - **Artifact**: an uploaded binary for a specific OS and architecture, such as `linux/amd64`. A release can hold many artifacts.
 - **Branch**: the git branch is a first-class field on every release. You can therefore always fetch the latest build of a branch.
 - **Visibility**: projects are public or private. Private projects require an auth token on every endpoint, including the package-manager formats. A project follows the GitHub repo that publishes it, unless an operator forces a folder, the project or one build public or private. A build forced private needs a token to download even when its project is public.
@@ -36,7 +36,7 @@ curl -fLo buildhost "__DL_URL__/buildhost?os=linux&arch=amd64"
 chmod +x buildhost
 ```
 
-`os` is `linux`, `darwin` or `windows`. `arch` is `amd64` or `arm64`.
+`arch` is `amd64` or `arm64`.
 
 ```
 # Create a project once
@@ -68,7 +68,7 @@ PUT  __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/{os}/{a
 POST __BASE_URL__/api/v1/projects/{project}/releases/{version}/publish
 ```
 
-The upload's `{os}` segment accepts one OS, a comma-separated list such as `linux,darwin,windows`, or `cosmo` for linux, darwin and windows together. The aliases `any`, `all` and `universal` mean the same as `cosmo`. The `{arch}` segment accepts a list, or `any` or `all` for amd64 and arm64.
+The upload's `{os}` segment accepts one OS, a comma-separated list such as `linux,darwin,windows`, or `cosmo` for linux, darwin and windows together. The `{arch}` segment accepts a list, or `any` or `all` for amd64 and arm64.
 
 The body is stored once. One ordinary artifact row is created per os/arch combination. The set is all-or-nothing. A conflicting combination returns 409. Downloads are therefore unchanged. Always request a concrete os/arch.
 
@@ -88,7 +88,7 @@ PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?plat
 
 Every listed platform then resolves to that artifact. `/{project}?os=darwin&arch=arm64` and `/{project}?os=linux&arch=amd64` redirect to the SAME download URL, with the same digest and ETag. apt, brew, npm and oci still cover every listed platform.
 
-`?kind=`, `X-Artifact-Filename`, `upload_session=` and `upload_sha256=` work exactly as they do on the `{os}/{arch}` endpoint. `kind=docker` and `kind=npm-package` are rejected.
+`kind=docker` and `kind=npm-package` are rejected.
 
 A declaration of MORE THAN ONE platform whose uploaded bytes are not an APE returns 400. Such bytes carry no `MZqFpD` magic. Publish per-platform builds to `/artifacts/{os}/{arch}` instead.
 
@@ -129,7 +129,7 @@ curl -LO "__DL_URL__/myapp?branch=main&os=linux&arch=amd64"
 
 The bare download URL carries no `v=` and no `branch=`. It always resolves the newest build of the project's default branch. An upload from another branch never affects it. This is guaranteed, and buildhost's e2e regression tests cover it. Do not re-verify it per project.
 
-Add `&fmt=` to repackage on the fly. Supported values: `raw`, `tar.gz`, `tar.xz`, `tar.zst`, `zip`.
+Add `&fmt=` to repackage on the fly. Supported values.
 
 ```
 curl -LO "__DL_URL__/myapp?os=linux&arch=amd64&fmt=tar.gz"
@@ -164,7 +164,7 @@ curl -fsSL -H "Authorization: Bearer $TOKEN" __APT_URL__/myapp/install.sh \
   | sudo BUILDHOST_TOKEN=$TOKEN sh
 ```
 
-With a token, the installer adds the authenticated source `__APT_URL__/private` instead. That is ONE repository that lists every public project plus each private project the token can read. A package and its private dependencies resolve from one source line and one auth entry. It answers an anonymous request with a 401 and a Basic challenge. In `/etc/apt/auth.conf.d/`, write `machine __APT_URL__/private`, `login token` and `password $TOKEN`, and keep the scheme on the machine line.
+With a token, the installer adds the authenticated source `__APT_URL__/private` instead. That is ONE repository that lists every public project plus each private project the token can read. A package and its private dependencies resolve from one source line and one auth entry. It answers an anonymous request with a 401 and a Basic challenge.
 
 To set it up by hand instead, see the README. APT reads the armored key at __APT_URL__/myapp/key.asc directly via signed-by, so no gpg step is needed.
 
@@ -175,8 +175,6 @@ A `create_service` project's generated deb also ships a systemd user unit at `/u
 A pre-built `.deb` artifact uploaded as `kind=archive` is served byte-same. Nothing is ever injected into it.
 
 A project can declare its runtime prerequisites as `apt_depends`, in Debian relationship syntax, for example `"bubblewrap | docker.io"`. The generated deb and the Packages entry then carry a `Depends:` line, so `apt-get install` pulls them in. Send the string on release-create (`"apt_depends": "..."`), or on `PATCH __BASE_URL__/api/v1/projects/{project}`. An absent field leaves the stored value untouched. An empty string clears it. A value that is not Debian relationship syntax returns 400 and changes nothing.
-
-The CLI takes `--apt-depends`, and the `buildhost-publish` and `buildhost-create-release` actions take an `apt_depends` input.
 
 A project can also depend on other buildhost projects, as a `depends` list of project names, for example `["ascii-timeline"]`. The Depends line then names each one, the project's `install.sh` also adds each dependency's repository (or, with a token, the authenticated source that lists them all), and the brew formula declares `depends_on "pazer/build/<formula>"`. `apt-get install` and `brew install` therefore install the dependencies too. Send the list on release-create or on the project PATCH. An absent field leaves it untouched, and `[]` clears it. A name that does not resolve, or that the token cannot read, returns 400.
 
@@ -285,7 +283,7 @@ A commit ref takes the full 40-hex sha, or any abbreviation of several character
 
 A redirect only ever runs toward the shorter URL. `@<default branch>` 302s to the bare path above, and never the reverse. The original `/myapp/branch/main/x.css` spelling is not going away either. It 302s to whichever URL above names the same file. Every published link therefore keeps resolving.
 
-A project name is slash-namespaced. The bare path's split is therefore resolved by longest match. With projects `org` and `org/repo`, `__SITES_URL__/org/repo` is org/repo's root. It is not the file `repo` under `org`. The `@` form never needs that lookup, because the sigil marks exactly where the project name ends. __SITE_SECTION__
+A project name is slash-namespaced. The bare path's split is therefore resolved by longest match. It is not the file `repo` under `org`. The `@` form never needs that lookup, because the sigil marks exactly where the project name ends. __SITE_SECTION__
 ## REST API reference
 
 API routes are on the main domain. Service-specific routes use subdomains.

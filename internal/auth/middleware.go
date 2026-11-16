@@ -90,7 +90,7 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 			}
 		}
 		// Sign in with GitHub browser session.
-		if m.GitHub != nil {
+		if m.github() != nil {
 			if login, ghToken, ok := sessionFromRequest(r); ok {
 				ctx := WithUser(r.Context(), login)
 				ctx = WithGitHubToken(ctx, ghToken)
@@ -117,14 +117,15 @@ func RequireWrite(next http.HandlerFunc) http.HandlerFunc {
 // GitHub repo. allowed is false if not signed in, the project has no known
 // repo.
 func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sessionTokenDead bool) {
-	if mw == nil || mw.GitHub == nil || project.GithubRepo == "" {
+	gh := githubAuth()
+	if gh == nil || project.GithubRepo == "" {
 		return false, false
 	}
 	login, ok := UserFrom(ctx)
 	if !ok {
 		return false, false
 	}
-	return mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
+	return gh.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), project.GithubRepo)
 }
 
 // UserCanReadRepo reports whether the request's signed-in GitHub user may read
@@ -132,14 +133,15 @@ func userCanReadProject(ctx context.Context, project *db.Project) (allowed, sess
 //
 // userCanReadProject answers the same question for a buildhost project.
 func UserCanReadRepo(ctx context.Context, ownerRepo string) bool {
-	if mw == nil || mw.GitHub == nil || ownerRepo == "" {
+	gh := githubAuth()
+	if gh == nil || ownerRepo == "" {
 		return false
 	}
 	login, ok := UserFrom(ctx)
 	if !ok {
 		return false
 	}
-	allowed, _ := mw.GitHub.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), ownerRepo)
+	allowed, _ := gh.canAccessRepo(ctx, login, GitHubTokenFrom(ctx), ownerRepo)
 	return allowed
 }
 

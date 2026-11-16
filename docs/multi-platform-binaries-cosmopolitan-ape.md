@@ -2,7 +2,7 @@
 
 A single uploaded binary can be published for several operating systems and architectures, in one request. This was built for a [Cosmopolitan APE](https://justine.lol/ape.html) binary, which runs everywhere. It is usable for any platform-independent artifact.
 
-The upload endpoint's `{os}` path segment accepts a single OS, unchanged from before. It also accepts a comma-separated list, such as `linux,darwin,windows`. It also accepts the alias `cosmo`, whose synonyms are `any`, `all` and `universal`, and which expands to `linux`, `darwin` and `windows`. The `{arch}` segment likewise accepts a list, or `any` or `all` for `amd64` and `arm64`.
+The upload endpoint's `{os}` path segment accepts a single OS, unchanged from before. It also accepts a comma-separated list, such as `linux,darwin,windows`.
 
 ```bash
 # One APE binary, published for linux, darwin, and windows in one request

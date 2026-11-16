@@ -1,10 +1,10 @@
 # Uploads: chunked sessions, fan-out and hash references
 
-`internal/uploads/`, `internal/uploadclient/`, `internal/ociclient/`, and the artifact-upload half of `internal/api/`. Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
+Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
 
 ## Multi-platform fan-out
 
-The artifact upload (`PUT .../artifacts/{os}/{arch}`) supports **multi-platform fan-out**. `expandOSSpec` and `expandArchSpec` in `artifacts.go` implement it. The `{os}` segment takes a single OS, a comma list, or the alias `cosmo`. The aliases `any`, `all` and `universal` mean the same thing, and each expands to linux, darwin and windows. That alias exists for a Cosmopolitan APE binary, which runs everywhere. The `{arch}` segment takes a list, or `any` or `all`, which expand to amd64 and arm64.
+The artifact upload (`PUT .../artifacts/{os}/{arch}`) supports **multi-platform fan-out**. `expandOSSpec` and `expandArchSpec` in `artifacts.go` implement it. The `{os}` segment takes a single OS, a comma list, or the alias `cosmo`. That alias exists for a Cosmopolitan APE binary, which runs everywhere. The `{arch}` segment takes a list, or `any` or `all`, which expand to amd64 and arm64.
 
 `db.NormalizeOS` and `db.NormalizeArch` normalize each element, so the upload accepts the same alias spellings as a download. An invalid, empty or duplicate element answers 400.
 
@@ -120,6 +120,6 @@ An explicitly passed `tags` input skips the compute step fully, byte-identically
 
 ## One artifact covering several platforms
 
-Fan-out answers "N builds that share bytes". The other question is "ONE file that runs on several platforms", which is an APE. `PUT .../artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64` answers it. That endpoint stores ONE artifact row that occupies every named slot. The result is one download link, and not N. The same `kind`, `X-Artifact-Filename`, `upload_session` and `upload_sha256` mechanics apply.
+Fan-out answers "N builds that share bytes". The other question is "ONE file that runs on several platforms", which is an APE. `PUT .../artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64` answers it. That endpoint stores ONE artifact row that occupies every named slot. The result is one download link, and not N.
 
 A multi-platform declaration whose file carries no APE magic is rejected. Depth: `docs/multi-platform-artifacts.md`.

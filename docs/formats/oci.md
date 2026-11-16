@@ -20,7 +20,7 @@ Each per-platform **image manifest is likewise persisted and linked per pull**. 
 
 The Docker classic image store, which is the non-containerd overlay2 store, reads a manifest by tag. It then re-fetches the manifest by the advertised `Docker-Content-Digest`, to store it content-addressably. Without the persisted index that by-digest fetch answered 404. `docker pull <repo>:<tag>` then failed with `manifest unknown`, while a child platform pull still worked.
 
-The config sets `Env`, which includes `SSL_CERT_FILE`. It also sets `WorkingDir`, the `/<project>` entrypoint, and `User`. `User` comes from the release's optional `oci_user` field. An empty value means root.
+The config sets `Env`, which includes `SSL_CERT_FILE`. `User` comes from the release's optional `oci_user` field. An empty value means root.
 
 ### One layout, one base layer
 
@@ -58,7 +58,7 @@ The deployment stays on the version it already runs. A shebang script is execabl
 
 ## Push side
 
-The push side is `push.go`, `upload.go` and `putmanifest.go`. It accepts a monolithic or chunked blob upload, streamed to `DataDir/tmp/oci-uploads`. It accepts a manifest PUT and an index PUT. It records a `kind=docker` artifact.
+It accepts a monolithic or chunked blob upload, streamed to `DataDir/tmp/oci-uploads`. It accepts a manifest PUT and an index PUT. It records a `kind=docker` artifact.
 
 The chunked upload session is **resumable**. PATCH verifies an optional `Content-Range` start against the committed size. A mismatch answers 416 with the current `Range`, and consumes nothing. A client that lost a response therefore cannot corrupt the blob by a re-send. `GET /v2/{name}/blobs/uploads/{uuid}` reports the committed `Range` in a 204, for the resume. Session sweeping goes by **last activity**, at 2h idle, and not by creation time.
 

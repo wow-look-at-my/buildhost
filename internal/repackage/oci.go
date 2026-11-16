@@ -289,12 +289,11 @@ func essentialsLayer() ([]byte, string, error) {
 	return e.compressed, e.diffID, err
 }
 
-// buildEssentials builds the deterministic, zstd-compressed "essentials" tar layer:
-// CA certificates plus a minimal rootfs (/etc/passwd, /etc/group, /etc/nsswitch.conf and
-// a sticky /tmp). It is pure: it reads only the embedded bundle and fixed literals,
-// and emits entries in a fixed order with pinned headers. So the output is byte-identical
-// on every call (required: the pull path regenerates and re-hashes it per request).
-// The shell is appended to it per architecture; see OCI.base.
+// buildEssentials builds the deterministic, zstd-compressed "essentials" tar layer: CA
+// certificates plus a minimal rootfs. It is pure: it reads only the embedded bundle and
+// fixed literals, and emits entries in a fixed order with pinned headers. So the output
+// is byte-identical on every call (required: the pull path regenerates and re-hashes it
+// per request). The shell is appended to it per architecture; see OCI.base.
 func buildEssentials() (essentials, error) {
 	var buf bytes.Buffer
 	zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedDefault))

@@ -46,7 +46,7 @@ The field exists because they DID drift. Every publisher used to build the URL f
 
 One thing deliberately does not collapse. A **commit** ref is the most specific spelling there is. To rewrite it to a mutable pointer throws the pin away. `refNamesBranch` gates the collapse.
 
-The collapse is also skipped when the bare URL addresses a DIFFERENT project. `apexURLFor` decides that. With projects `org` and `org/repo`, `org`'s own file `repo/x.css` has no usable short URL, because `/org/repo/x.css` belongs to org/repo. That file is served in place, rather than redirected somewhere that means something else.
+The collapse is also skipped when the bare URL addresses a DIFFERENT project. `apexURLFor` decides that. That file is served in place, rather than redirected somewhere that means something else.
 
 ### The `@` ref sigil
 
@@ -106,7 +106,7 @@ Without that route, only an explicit branch URL served a file, and the bare root
 
 The project and path split is ambiguous by construction, because a project name is slash-namespaced and a file path has slashes too. The router cannot make that split. `{project}` has no wildcard after it, so it binds the WHOLE remainder greedily.
 
-`parseRootRoute` splits it by **longest match against existing projects**. `splitProjectPath` tries segment prefixes from longest to shortest, through `GetProject`. That is the same git-refs-style shadowing rule `splitSiteBranch` applies to a slash-named branch. With projects `org` and `org/repo`, `/org/repo` therefore stays org/repo's root, even when `org`'s site holds a file named `repo`. It repointed no URL that resolved before this route served files can. When no prefix names a project, the whole remainder stays the project name.
+`parseRootRoute` splits it by **longest match against existing projects**. `splitProjectPath` tries segment prefixes from longest to shortest, through `GetProject`. That is the same git-refs-style shadowing rule `splitSiteBranch` applies to a slash-named branch. It repointed no URL that resolved before this route served files can. When no prefix names a project, the whole remainder stays the project name.
 
 `requireProject` then answers exactly the 404 the bare-root route always did.
 
@@ -140,7 +140,7 @@ The BARE site apex carries no project label. It matches no host-bearing route, a
 
 See the unknown-domain security note.
 
-A name with `/`, `.` or `_`, or a name many characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
+A name, or a name many characters, answers 404 on this scheme. It stays reachable on `sites.{domain}/...`. There is no brew-style fold-back in v1.
 
 ## CORS applies to REDIRECTS, not just to the bytes
 

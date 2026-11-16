@@ -1,6 +1,6 @@
 # Visibility overrides
 
-Who may read a build is decided at a few levels. Each level is `auto`, `public` or `private`. The most specific level that is not `auto` wins.
+Who may read a build is decided at a few levels. The most specific level that is not `auto` wins.
 
 | Level | Key | Set in the admin dashboard |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ Who may read a build is decided at a few levels. Each level is `auto`, `public` 
 
 - `projects.is_private` is the EFFECTIVE project state. Every read path checks it, so a folder or project override needs no change in any handler. `db.applyProjectVisibility` writes it.
 - `project_visibility.auto_private` is the source value. The OIDC write path calls `db.SyncAutoPrivate`, which updates this column and re-resolves. It never writes `is_private` directly, so an override survives the next publish.
-- `visibility_folders`, `release_visibility` and `site_visibility` hold only non-auto rules. `auto` deletes the row.
+- `auto` deletes the row.
 - A folder change re-resolves every project it covers. A new project is resolved at creation. A folder rule applies from the first publish.
 - Branch keys site_visibility`, so an override outlives each redeploy. With no override, a site published with `X-Public-Site: true` reads as public.
 

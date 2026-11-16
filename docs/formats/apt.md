@@ -10,9 +10,11 @@ The `Packages` index's per-artifact deb `Size` and `SHA256` are **cached in `pac
 
 The row is a digest cache only. `storage_key` records the SOURCE artifact blob. No deb is stored, and a pool download still repackages on demand. That is sound, because deb generation is deterministic per input set. The ar member headers are fixed with a zero timestamp, uid and gid. The tar mtimes are zero.
 
-The deb bytes, unlike a tar.gz, also bake in MUTABLE project state: the control `Description`, `Homepage` and `Depends`, and the create_service postinst, prerm. Unit members. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
+The gzip header fields and the member order are fixed. The input is content-addressed. `TestDebGenerationDeterministic` pins all of it. The rows also ride the existing retention cascade (`deleteReleaseRows`).
 
-ONE shared renderer produces `Packages` and the `Release` and `InRelease` SHA256 lines. It is `packagesEntry` in `packages.go`, consumed by `computePackagesHashes` in `release.go`. The signed hashes therefore always describe exactly the served index bytes. A digest failure surfaces as a 500 on both routes. Before the cache it fell back silently to the RAW upload's size and sha, which are values apt can never verify a download against. With the cache warm, a `Packages`, `Release` or `InRelease` request costs one DB read per architecture, and no repackaging.
+The deb bytes, unlike a tar.gz, also bake in MUTABLE project state. Each row's `metadata` therefore records a fingerprint of exactly those inputs (`{"inputs_sha256": ...}`, `debDigestFingerprint`). A mismatch reads as a miss and refills the row in place. An operator who flips create_service through the project PATCH, with no new release, causes one. Without that, the row keeps a stale digest, and apt rejects every pool download against it.
+
+It is `packagesEntry` in `packages.go`, consumed by `computePackagesHashes` in `release.go`. The signed hashes therefore always describe exactly the served index bytes. A digest failure surfaces as a 500 on both routes. Before the cache it fell back silently to the RAW upload's size and sha, which are values apt can never verify a download against.
 
 ## Depends
 
@@ -36,8 +38,6 @@ The key is Ed25519, which is OpenPGP EdDSA over Curve25519, algorithm 22. It is 
 
 GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every client's `apt update`. An existing RSA key on disk is still loaded and used as it is. An upgrade therefore never rotates a deployment's key or invalidates a client's `signed-by`.
 
-GnuPG 2.4's `gpgv` rejects it with "Invalid public key algorithm". That is every client's `apt update`. An existing RSA key on disk is still loaded and used as it is. An upgrade therefore never rotates a deployment's key or invalidates a client's `signed-by`.
-
 The InRelease (clearsigned), Release.gpg (detached) and key.asc (public key) endpoints are all served. The easiest client setup is the generated per-project installer (`curl -fsSL apt.{domain}/{project}/install.sh | sudo sh`). It saves the armored `key.asc` to `/etc/apt/keyrings/buildhost-{project}.asc`. It writes a `[signed-by=...]` source. APT reads the armored key directly through `signed-by`, verified against apt 2.8. The client therefore needs no `gpg --dearmor` step and no `gpg` binary.
 
 A private project passes a read token through `BUILDHOST_TOKEN`. The installer then writes the authenticated source and one `/etc/apt/auth.conf.d/buildhost-private.conf` entry for it. The `machine` line keeps the URL's scheme, because apt applies a line with no scheme to https only. An http deployment otherwise never sends the token.
@@ -50,4 +50,4 @@ A private project passes a read token through `BUILDHOST_TOKEN`. The installer t
 
 A public project's deb redirects unsigned.
 
-The route registers `/private/dists/`, `/private/pool/` and `/private/key.asc` on their own. These are more specific than `/{path...}`, so a project named exactly `private` has no per-project repository.
+These are more specific than `/{path...}`, so a project named exactly `private` has no per-project repository.

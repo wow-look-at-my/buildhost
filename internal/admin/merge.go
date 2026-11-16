@@ -125,7 +125,7 @@ func (s *Server) apiMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	snap := filepath.Join(filepath.Dir(s.cfg.DBPath), fmt.Sprintf("buildhost-premerge-%s.db", time.Now().UTC().Format("20060102T150405Z")))
+	snap := filepath.Join(filepath.Dir(s.conf().DBPath), fmt.Sprintf("buildhost-premerge-%s.db", time.Now().UTC().Format("20060102T150405Z")))
 	if err := s.db.SnapshotTo(ctx, snap); err != nil {
 		slog.ErrorContext(ctx, "merge refused: snapshot failed", "from", from, "into", body.Into, "error", err)
 		http.Error(w, "refusing to merge without a snapshot: "+err.Error(), http.StatusInternalServerError)

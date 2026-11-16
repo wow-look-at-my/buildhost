@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wow-look-at-my/buildhost/internal/auth"
@@ -47,6 +48,7 @@ func (b BuildInfo) ShortCommit() string {
 
 type Server struct {
 	cfg       config.Config
+	live      atomic.Pointer[config.Config]
 	db        *db.DB
 	store     storage.Storage
 	build     BuildInfo
@@ -61,6 +63,14 @@ type Server struct {
 	indexHTML []byte
 
 	restart func()
+}
+
+// conf returns the configuration in use. A saved setting replaces it.
+func (s *Server) conf() config.Config {
+	if c := s.live.Load(); c != nil {
+		return *c
+	}
+	return s.cfg
 }
 
 // SetRestart sets what the dashboard's restart button calls.
@@ -153,6 +163,7 @@ func (s *Server) NewHTTPServer() *http.Server {
 	mux.HandleFunc("GET /api/settings", router.Allow, s.apiSettings)
 	mux.HandleFunc("PUT /api/settings/{name}", router.Allow, s.apiSetSetting)
 	mux.HandleFunc("DELETE /api/settings/{name}", router.Allow, s.apiDeleteSetting)
+	mux.HandleFunc("POST /api/settings/{name}/validate", router.Allow, s.apiValidateSetting)
 	mux.HandleFunc("POST /api/restart", router.Allow, s.apiRestart)
 	mux.HandleFunc("GET /admin/inflight", router.Allow, InflightHandler)
 

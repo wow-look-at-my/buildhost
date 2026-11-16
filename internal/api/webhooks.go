@@ -30,7 +30,11 @@ type githubDeleteEvent struct {
 }
 
 func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.GitHubWebhookSecret == "" {
+	secret := h.GitHubWebhookSecret
+	if secret == "" {
+		secret = auth.GitHubWebhookSecret()
+	}
+	if secret == "" {
 		jsonError(w, http.StatusNotFound, "webhook not configured")
 		return
 	}
@@ -40,7 +44,7 @@ func (h *Handler) GitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if !validGitHubSignature(r.Header.Get("X-Hub-Signature-256"), body, h.GitHubWebhookSecret) {
+	if !validGitHubSignature(r.Header.Get("X-Hub-Signature-256"), body, secret) {
 		jsonError(w, http.StatusUnauthorized, "invalid webhook signature")
 		return
 	}

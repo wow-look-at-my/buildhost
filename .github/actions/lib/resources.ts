@@ -91,7 +91,7 @@ export async function createProject(g: ActionGlobals): Promise<void> {
 	core.setOutput('id', String(data.id));
 }
 
-/** buildhost-create-release: outputs response and version. create_service, default_branch, apt_depends and depends go only when set. */
+/** buildhost-create-release: outputs response and version. */
 export async function createRelease(g: ActionGlobals): Promise<void> {
 	const { core, github, inputs } = g;
 	const server = String(inputs.server);

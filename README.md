@@ -28,7 +28,7 @@ buildhost serves a public, read-only browse UI on the main domain, and it uses n
 
 - `GET /` -- an index of every public project
 - `GET /projects/{project}` -- a project's metadata, its published releases, its deployed static sites, and copy-paste install and download commands
-- `GET /projects/{project}/releases/{version}` -- a release's artifacts, with a download link per format. The formats are `raw`, `tar.gz`, `tar.xz`, `tar.zst` and `zip`. An image release gets a `docker pull` instead.
+- `GET /projects/{project}/releases/{version}` -- a release's artifacts, with a download link per format. An image release gets a `docker pull` instead.
 
 A private project is hidden. An anonymous visitor never sees it in a listing. A direct visit to its page returns a `404`, same to the answer for a project that does not exist. The frontend therefore never reveals that a private project exists, the same way GitHub treats a private repository. A read-scoped token authorized for the project reveals it.
 
@@ -39,10 +39,9 @@ A download link points at the `dl` subdomain. The single stylesheet is served fr
 A project can hold only a plain binary, with no pushed image. The registry then synthesizes an OCI image from it on demand, so `docker pull` and `crane pull` both work. The image is deliberately minimal. It still ships the runtime essentials of `gcr.io/distroless/static`. A networked service therefore works with no real image pushed.
 
 - A real public **CA certificate bundle** at `/etc/ssl/certs/ca-certificates.crt` (and `SSL_CERT_FILE` pointing at it), so outbound HTTPS works -- no more `x509: certificate signed by unknown authority`.
-- `/etc/passwd` and `/etc/group` with `root`, `nobody` and `nonroot` (UID 65532), an `/etc/nsswitch.conf` (`hosts: files dns`) and a sticky `/tmp`.
 - The binary at `/<project>` as the entrypoint, a sane `PATH`, and `WorkingDir=/`.
 
-The image runs as **root** by default. To run it as another user, set `oci_user` on the release. That field takes `uid[:gid]` or `name[:group]`, such as `65532:65532` for the bundled nonroot user. It is emitted as the image's `config.User`.
+The image runs as **root** by default. To run it as another user, set `oci_user` on the release. It is emitted as the image's `config.User`.
 
 ```bash
 buildhost publish --oci-user 65532:65532 ...   # or oci_user in a release manifest / the
@@ -57,7 +56,7 @@ The synthesized image is regenerated on demand, and nothing stores it. Its diges
 
 ## GitHub Deployments
 
-The top-level publish actions are `buildhost-publish`, `buildhost-publish-site` and `buildhost-publish-docker`. Each one registers its publish as a GitHub Deployment in the calling repo. The deployment appears in that repo's Environments and Deployments UI, with a "View deployment" link to the live buildhost URL. That URL is the release page, the site URL, or the project page.
+Each registers its publish as a GitHub Deployment in the calling repo. The deployment appears in that repo's Environments and Deployments UI, with a "View deployment" link to the live buildhost URL. That URL is the release page, the site URL, or the project page.
 
 - It is on by default, through `create_deployment: 'true'`. It needs `deployments: write` in the calling job. Without that grant the step warns, and the publish proceeds.
 - `deployments: write` is **additive** to each action's existing permissions, so keep `id-token: write` and the rest. A job-level `permissions:` block replaces the workflow-level one. List the full set wherever you declare one.
@@ -180,7 +179,7 @@ For filename-derived uploads (`name_os_arch`), name the files `myapp_wasm_js` / 
 
 `os=wasm` pairs only with the `js` and `wasip1` arches, and each of those pairs only with `wasm`. Any other combination is rejected with a 400, and `wasm/amd64` and `linux/js` are both examples.
 
-The multi-platform aliases deliberately exclude wasm. `cosmo`, `any` and `all` mean "runs on every native desktop platform". A wasm module instead needs a JS host or a WASI runtime. Publish wasm explicitly.
+The multi-platform aliases deliberately exclude wasm. A wasm module instead needs a JS host or a WASI runtime. Publish wasm explicitly.
 
 A wasm artifact is served raw, and through the archive formats such as `tar.gz` and `zip`. It never appears in the APT index or in the Homebrew tap, which are linux and darwin only by construction.
 
@@ -276,7 +275,7 @@ Tokens authenticate all API requests. There are kinds:
 - **A global token** omits `project_id`. It can access every project. It can also manage tokens.
 - **A project-scoped token** sets `project_id`. It is limited to one project. It cannot list or delete a token.
 
-Each token has a `scopes` field. That field is a comma-separated subset of `read`, `write` and `share`. The default, when it is omitted, is `read`. A token can grant only a scope it already holds, so a read-only token cannot mint a write token.
+Each token has a `scopes` field. That field is a comma-separated subset. The default, when it is omitted, is `read`. A token can grant only a scope it already holds, so a read-only token cannot mint a write token.
 
 `share` is a distinct permission. It mints a [temporary download link](#temporary-download-links). `write` does not imply it. A CI or deploy token therefore cannot hand out a shareable link to a private artifact. The bootstrap admin token holds `read,write,share`.
 
@@ -421,7 +420,7 @@ Rotate the signing key to invalidate every outstanding link.
 
 `GET /healthz` returns `200` when the server is up and its database is reachable, and `503` when the database is unreachable. The JSON body reports the exact build the server runs, either way. You can therefore check which image a deployment is on. The response carries `Cache-Control: no-store`.
 
-Ask the apex, or the container by IP or localhost. The service subdomains (`static`, `dl`, `oci`, `docker`, `apt`, `npm`, `brew`, `git`, `goproxy`, `sites`) and the site-domain hosts answer `/healthz` with `404`, because the CDN caches those hosts.
+Ask the apex, or the container by IP or localhost. The service subdomains and the site-domain hosts answer `/healthz` with `404`, because the CDN caches those hosts.
 
 ```json
 {"status":"ok","commit":"<git-sha>","version":"v0.0.<unix>"}
@@ -489,7 +488,7 @@ Set `BUILDHOST_OIDC_ISSUERS` to a comma-separated list of trusted OIDC issuers (
 
 1. Fetches the issuer's JWKS keys (via OIDC discovery) and verifies the JWT signature
 2. Checks the org (from subject) and event type (from `event_name` claim) against the allowlists
-3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`). A leading `.`, `_` or `-` is dropped, so `.github` -> `github`.
+3. Derives the repo's project name from the subject claim (`repo:org/name:*` -> `name`).
 4. Auto-creates the project, or any project slash-namespaced beneath it, when that project does not exist. Such a project gets auto-versioning.
 5. Grants `read,write` scoped to that repo's namespace: project `name` and any `name/<...>` beneath it, but nothing else
 
@@ -501,20 +500,13 @@ A project name may contain `/`, and it nests to any depth, as `log-streamer/clie
 
 That is what lets a repo that ships several binaries publish each one to its own project. Go-toolchain's autorelease maps every built binary to `<repo>/<binary>`. It strips a redundant leading `<repo>-`. A single binary named after the repo stays flat, as `<repo>`.
 
-| repo | binary | project |
-|------|--------|---------|
-| `log-streamer` | `log-streamer-client` | `log-streamer/client` |
-| `log-streamer` | `log-streamer-server` | `log-streamer/server` |
-| `foo` | `foo` | `foo` |
-| `foo` | `foo-cli` | `foo/cli` |
-
 ```bash
 BUILDHOST_OIDC_ISSUERS=https://token.actions.githubusercontent.com \
   BUILDHOST_OIDC_ORGS=wow-look-at-my,PazerOP \
   buildhost serve
 ```
 
-By default the `push`, `pull_request` and `workflow_dispatch` events are allowed. Each one limits auto-provisioning to a user with write access to the repository.
+Each limits auto-provisioning to a user with write access to the repository.
 
 A `push` comes from a member or a collaborator. A `pull_request` from a fork receives no OIDC token at all, so only a same-repo PR, from a member, can authenticate. Only a user with write access to the repo can trigger a `workflow_dispatch`, which is a manual run. It therefore carries the same write-access guarantee as a `push`.
 

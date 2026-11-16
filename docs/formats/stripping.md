@@ -14,7 +14,7 @@ It is also the permanent fix for the BFD hole. strip and objcopy accept PE/COFF 
 
 ## What it does
 
-Drop the non-`SHF_ALLOC` debug and symbol sections (`.debug_*`, `.zdebug_*`, `.stab*`, `.symtab`, `.strtab`). Keep everything else. Rewrite the section table. An allocated section NEVER moves. A program header addresses it by file offset, so a relocation breaks execution. The whole transformation is therefore "copy the allocated prefix verbatim, re-emit the rest".
+Drop the non-`SHF_ALLOC` debug and symbol sections. Keep everything else. Rewrite the section table. An allocated section NEVER moves. A program header addresses it by file offset, so a relocation breaks execution. The whole transformation is therefore "copy the allocated prefix verbatim, re-emit the rest".
 
 Tests EXECUTE the stripped binary instead of an inspection of it. They pin determinism, because a download's sha256 is baked into a Homebrew formula and the APT index. They also pin the invariant that an allocated section keeps its offset. Failures are never swallowed. `LogSkipped` logs a non-ELF skip at debug and any other failure at WARN. Silence at these call sites is exactly what hid the breakage for weeks.
 

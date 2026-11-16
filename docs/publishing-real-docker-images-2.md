@@ -69,4 +69,4 @@ A publish logs docker in for you, and so does a pull. To fetch a published image
     images: oci.pazer.build/myproject:v1.2.3
 ```
 
-Those actions are `buildhost-publish-docker`, `buildhost-docker-push` and `buildhost-docker-pull`. They are the only supported way to authenticate a CI Docker workflow to buildhost. There is no login-only action, and no CLI equivalent.
+They are the only supported way to authenticate a CI Docker workflow to buildhost. There is no login-only action, and no CLI equivalent.

@@ -87,7 +87,7 @@ func githubAuth() *GitHubAuth {
 	if mw == nil {
 		return nil
 	}
-	return mw.GitHub
+	return mw.github()
 }
 
 func githubAuthEnabled() bool { return githubAuth() != nil }

@@ -3,8 +3,8 @@
 buildhost accepts a single upload up to 2 GiB. A proxy in front of it may not. Cloudflare's edge rejects a request body over 100 MB, with a 413 that never reaches the origin. Several ways around that follow, and each is reliable on the first try.
 
 - **The direct upload endpoint is preferred when it is configured.** Your deployment can expose a hostname that reaches the origin without the proxied body cap. Point `--server`, or your upload URLs, at that hostname. A single-request upload of any size then works. Nothing else changes.
-- **A hash-reference upload sends same bytes zero times.** A file byte-identical to one the project already uploaded need not be sent at all. Another platform slot of the same release is such a file, and so is an unchanged re-release. Register it with an empty-body PUT that names the blob's SHA-256. See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload). The in-repo publish clients do this automatically when the server advertises `upload_by_sha256`.
-- **A chunked upload session is the automatic fallback.** Through the proxied hostname, the in-repo publish clients transparently split a large file into chunks that fit under the cap. You need no knowledge that this exists. `buildhost publish`, `buildhost publish-site` and the `buildhost-upload-artifact` GitHub action all check the file size against the server's advertised limit before they send anything. That limit is `max_direct_upload_bytes` from `GET /api/v1/server-info`, and it defaults to 95 MiB. They switch to a session only when they need one. A small file keeps the classic single request.
+- **A hash-reference upload sends same bytes zero times.** A file byte-same to one the project already uploaded need not be sent at all. Another platform slot of the same release is such a file, and so is an unchanged re-release. Register it with an empty-body PUT that names the blob's SHA-256. See [Registering more slots by hash](#registering-more-slots-by-hash-no-re-upload). The in-repo publish clients do this automatically when the server advertises `upload_by_sha256`.
+- **A chunked upload session is the automatic fallback.** Through the proxied hostname, the in-repo publish clients transparently split a large file into chunks that fit under the cap. You need no knowledge that this exists. That limit is `max_direct_upload_bytes` from `GET /api/v1/server-info`, and it defaults to 95 MiB. They switch to a session only when they need one. A small file keeps the classic single request.
 
 ```bash
 # Exactly the same command whether the file is 5 MB or 5 GB -- chunking is
@@ -25,7 +25,7 @@ A session works with **every** upload endpoint. An artifact PUT and a site deplo
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/v1/server-info` | Advertised limits and capabilities: `max_direct_upload_bytes`, `max_upload_bytes`, `upload_sessions`, `upload_by_sha256` (public) |
+| GET | `/api/v1/server-info` | Advertised limits and capabilities |
 | POST | `/api/v1/uploads` | Create a session (`write` scope; bound to your identity) |
 | PATCH | `/api/v1/uploads/{id}?offset=N` | Append a chunk at offset N; 409 with the committed `size` on mismatch (resume from it) |
 | GET | `/api/v1/uploads/{id}` | Current committed `size` (for resuming) |

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -136,6 +137,84 @@ func TestAPISettingsRefusesAConfigThatCannotStart(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code, "without the stored domain the server would not start")
 	assert.Contains(t, w.Body.String(), "BUILDHOST_PRIMARY_DOMAIN is required")
 	assert.Equal(t, "example.com", config.Getenv("BUILDHOST_PRIMARY_DOMAIN"), "a refused change leaves the stored values as they were")
+}
+
+func TestAPISettingsApplyWithNoRestart(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	srv, _ := newTestServer(t)
+	config.SetStored(nil)
+	t.Cleanup(func() { config.SetStored(nil) })
+	var seen []config.Config
+	config.OnChange(func(c config.Config) { seen = append(seen, c) })
+
+	w := serve(srv, http.MethodPut, "/api/settings/BUILDHOST_MIRROR_KEEP", bytes.NewBufferString(`{"value":"3h"}`))
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, seen, 1, "a save gives the new configuration to the running server")
+	assert.Equal(t, 3*time.Hour, seen[0].MirrorKeep)
+	assert.Equal(t, 3*time.Hour, config.Current().MirrorKeep)
+	assert.Equal(t, 3*time.Hour, srv.conf().MirrorKeep, "the dashboard pages read the saved value")
+	assert.NotContains(t, w.Body.String(), "restart_pending")
+
+	w = serve(srv, http.MethodPut, "/api/settings/BUILDHOST_MIRROR_KEEP", bytes.NewBufferString(`{"value":"never"}`))
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Len(t, seen, 1, "a refused save applies nothing")
+
+	w = serve(srv, http.MethodDelete, "/api/settings/BUILDHOST_MIRROR_KEEP", nil)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Len(t, seen, 2)
+	assert.Equal(t, 7*24*time.Hour, config.Current().MirrorKeep, "Clear puts the default back in use")
+}
+
+func TestAPIValidateSetting(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	t.Setenv("BUILDHOST_GITHUB_APP_ID", "")
+	srv, database := newTestServer(t)
+	config.SetStored(nil)
+	t.Cleanup(func() { config.SetStored(nil) })
+	type result struct {
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Warning string `json:"warning"`
+	}
+	check := func(name, body string) result {
+		t.Helper()
+		w := serve(srv, http.MethodPost, "/api/settings/"+name+"/validate", bytes.NewBufferString(body))
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var r result
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &r))
+		return r
+	}
+
+	assert.Equal(t, result{OK: true}, check("BUILDHOST_RUN_FILES_KEEP", `{"value":" 6h "}`))
+	r := check("BUILDHOST_RUN_FILES_KEEP", `{"value":"soon"}`)
+	assert.False(t, r.OK)
+	assert.Contains(t, r.Error, "duration")
+	r = check("BUILDHOST_PRIMARY_DOMAIN", `{"value":"https://example.com"}`)
+	assert.Contains(t, r.Error, "not a domain name")
+	r = check("BUILDHOST_PRIMARY_DOMAIN", `{"value":""}`)
+	assert.Contains(t, r.Error, "BUILDHOST_PRIMARY_DOMAIN is required", "the check covers the whole configuration after the change")
+	r = check("BUILDHOST_SECRET_SERVER_TOKEN", `{"value":"ghp_x"}`)
+	assert.Contains(t, r.Error, "sst_")
+	r = check("BUILDHOST_DATA_DIR", `{"value":"/tmp"}`)
+	assert.Contains(t, r.Error, "environment only")
+	r = check(config.GitHubAppKeySetting, `{"value":"-----BEGIN RSA PRIVATE KEY-----garbage-----END RSA PRIVATE KEY-----"}`)
+	assert.Contains(t, r.Error, "not an RSA private key")
+	r = check("BUILDHOST_GITHUB_APP_ID", `{"value":"12345"}`)
+	assert.True(t, r.OK)
+	assert.Contains(t, r.Warning, "BUILDHOST_GITHUB_APP_PRIVATE_KEY is empty")
+	assert.Equal(t, result{OK: true}, check("BUILDHOST_RUN_FILES_KEEP", `{"value":null}`), "a null value checks a Clear")
+
+	w := serve(srv, http.MethodPost, "/api/settings/NOPE/validate", bytes.NewBufferString(`{"value":"x"}`))
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	w = serve(srv, http.MethodPost, "/api/settings/BUILDHOST_RUN_FILES_KEEP/validate", bytes.NewBufferString(`not json`))
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	stored, err := database.ServerSettings(t.Context())
+	require.NoError(t, err)
+	assert.Empty(t, stored, "a check stores nothing")
+	assert.Empty(t, config.Getenv("BUILDHOST_RUN_FILES_KEEP"), "a check applies nothing")
 }
 
 func TestAPIRestart(t *testing.T) {

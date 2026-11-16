@@ -28,6 +28,8 @@ type Janitor struct {
 	DataDir        string
 	Keep           time.Duration
 	MinFreePercent float64
+	// Live returns the current Keep and MinFreePercent. Start reads it before each sweep.
+	Live func() (time.Duration, float64)
 
 	// Disk reports the filesystem that holds DataDir. See diskusage.Get.
 	Disk func(path string) (diskusage.Usage, error)
@@ -65,6 +67,9 @@ func (j *Janitor) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if j.Live != nil {
+					j.Keep, j.MinFreePercent = j.Live()
+				}
 				if j.Busy != nil && j.Busy() {
 					slog.Info("cache: deferring sweep, writes in flight")
 					lastReport.Store(&Report{At: time.Now(), Deferred: true})

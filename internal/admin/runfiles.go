@@ -63,13 +63,13 @@ func (s *Server) apiRunFiles(w http.ResponseWriter, r *http.Request) {
 		row.State = "live"
 		if run.EndedAt != nil {
 			row.State = "ended"
-			expires := run.EndedAt.Add(s.cfg.RunFilesKeep)
+			expires := run.EndedAt.Add(s.conf().RunFilesKeep)
 			row.ExpiresAt = &expires
 		} else if msg := runfiles.CheckError(db.RunKey{RepoID: run.RepoID, RunID: run.RunID}); msg != "" {
 			// The janitor deletes such a run once nothing used it for the keep period.
 			row.State = "unknown"
 			row.CheckError = msg
-			expires := run.UsedAt.Add(s.cfg.RunFilesKeep)
+			expires := run.UsedAt.Add(s.conf().RunFilesKeep)
 			row.ExpiresAt = &expires
 		}
 		for _, f := range files {
@@ -80,14 +80,14 @@ func (s *Server) apiRunFiles(w http.ResponseWriter, r *http.Request) {
 		out = append(out, row)
 	}
 	resp := map[string]any{
-		"keep_seconds":           int64(s.cfg.RunFilesKeep / time.Second),
+		"keep_seconds":           int64(s.conf().RunFilesKeep / time.Second),
 		"check_interval_seconds": int64(runfiles.CheckInterval / time.Second),
-		"min_free_percent":       s.cfg.RunFilesMinFreePercent,
+		"min_free_percent":       s.conf().RunFilesMinFreePercent,
 		"total_bytes":            total,
 		"runs":                   out,
 		"janitor":                runfiles.LastReport(),
 	}
-	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.conf().DataDir); err == nil && du.Total > 0 {
 		resp["disk_free"] = du.Free
 		resp["disk_total"] = du.Total
 		resp["disk_used"] = du.Used

@@ -58,7 +58,7 @@ The class name is `repackage.BrewVersionedClassName`, a port of Homebrew's `Form
 
 ## Formula codegen must always emit valid, loadable Ruby
 
-The class name comes from `repackage.BrewClassName`. It mirrors Homebrew's own filename-to-class derivation in `Formulary.class_s`. There `-`, `_` and `.` separate, and buildhost's folded `/` separates too. The next character is upcased, so `go1.2.3` becomes `Go123`.
+The class name comes from `repackage.BrewClassName`. It mirrors Homebrew's own filename-to-class derivation in `Formulary.class_s`. The next character is upcased, so `go1.2.3` becomes `Go123`.
 
 `repackage.BrewEligibleProjectName` excluds a digit-leading project name. A formula endpoint answers 404 for it, and the tap skips it. `class 7zip < Formula` is a Ruby syntax error. No substitute class satisfies brew's loader either, because `Formulary.class_s("7zip")` returns `"7zip"`, which is not a legal constant. Both facts were measured against Homebrew 6.0.9.
 
@@ -118,7 +118,7 @@ The tap itself is served from a **persistent, append-only, per-lineage git histo
 
 There is one lineage per **(request-derived base URL, credential scope)** key. The base URL is part of the key because a tap must never be served with another host's URLs baked in. The credential scope is part of it because tap contents depend on what the credential may read. `tapScopeKey` computes that scope, as anon, a DB-token ID, or an OIDC subject plus namespace. One scope's lineage can therefore never be handed to another.
 
-Each lineage is a bare dumb-HTTP layout, with loose `objects/`, `refs/heads/main`, `info/refs` and `HEAD`. By mmap through an `os.Root`, it is served. That is the storage-layer pattern, with no heap buffering and no path escape.
+Mmap through an `os.R servs itoot`. That is the storage-layer pattern, with no heap buffering and no path escape.
 
 **A ref only ever fast-forwards.** A rebuild reads the persisted tip. It REUSES that tip when the new content's tree is unchanged. As a result, a periodic rebuild adds no growth. The commit sha is deterministic, from zero timestamps, a fixed identity, and content. A rebuild otherwise appends a commit with `parent <tip>`.
 
