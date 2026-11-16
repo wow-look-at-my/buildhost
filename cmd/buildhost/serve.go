@@ -25,16 +25,15 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/config"
 	"github.com/wow-look-at-my/buildhost/internal/db"
 	"github.com/wow-look-at-my/buildhost/internal/diskusage"
+	"github.com/wow-look-at-my/buildhost/internal/liveapply"
 	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/recompress"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
 	"github.com/wow-look-at-my/buildhost/internal/scratch"
-	"github.com/wow-look-at-my/buildhost/internal/secretserver"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
@@ -66,8 +65,7 @@ var serveCmd = &cobra.Command{
 			return err
 		}
 		config.SetStored(stored)
-		cfg = config.Load()
-		config.MarkStarted()
+		cfg = config.Reload()
 		// Refuse to start on a configuration that cannot serve correctly, rather
 		// than degrade silently at request time.
 		if err := cfg.Validate(); err != nil {
@@ -87,18 +85,11 @@ var serveCmd = &cobra.Command{
 			slog.Info("set GOMEMLIMIT from cgroup", "bytes", limit)
 		}
 
-		if cfg.OTELEndpoint != "" {
-			shutdown, err := telemetry.Init(context.Background(), cfg.OTELEndpoint, buildinfo.Version())
-			if err != nil {
-				return fmt.Errorf("init telemetry: %w", err)
-			}
-			defer func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				shutdown(ctx)
-			}()
-			slog.Info("telemetry enabled", "endpoint", cfg.OTELEndpoint)
+		tel := &liveapply.Telemetry{}
+		if err := tel.Apply(cfg.OTELEndpoint); err != nil {
+			return fmt.Errorf("init telemetry: %w", err)
 		}
+		defer tel.Shutdown()
 
 		// The spool directories for in-progress uploads stay on the data volume; everything else scratch goes to TMPDIR.
 		scratch.Configure(cfg.TempDir)
@@ -154,20 +145,29 @@ var serveCmd = &cobra.Command{
 		}
 
 		srv := server.New(cfg, database, store)
-		if p := cfg.GitHubAppProblem(); p != "" {
-			slog.Error("GitHub App credential ignored; fix it on the admin Settings page", "problem", p)
+		gh := &liveapply.GitHub{Ctx: ctx}
+		if err := gh.Apply(cfg); err != nil {
+			return err
 		}
-		switch {
-		case cfg.SecretServerToken == "":
-			slog.Error("no BUILDHOST_SECRET_SERVER_TOKEN: buildhost gets no GitHub credential from secret-server", "github_credential", auth.GitHubCredentialSource())
-		case cfg.GitHubToken != "" || cfg.HasGitHubApp():
-			slog.Warn("secret-server: the GitHub credential in the environment takes precedence; the machine token is not used")
-		default:
-			src := &secretserver.Source{URL: secretserver.URL, Token: cfg.SecretServerToken}
-			if err := src.Start(ctx); err != nil {
-				return err
+		// A saved setting takes effect here. Nothing below reads cfg for a value the dashboard can change.
+		sweeperWake := make(chan struct{}, 1)
+		interval := cfg.RetentionInterval
+		config.OnChange(func(c config.Config) {
+			fsStore.SetCompress(c.StorageCompress)
+			if err := tel.Apply(c.OTELEndpoint); err != nil {
+				slog.Error("telemetry: the new endpoint is not in use", "endpoint", c.OTELEndpoint, "err", err)
 			}
-		}
+			if err := gh.Apply(c); err != nil {
+				slog.Error("GitHub credential: the new settings are not in use", "err", err)
+			}
+			if c.RetentionInterval != interval {
+				interval = c.RetentionInterval
+				select {
+				case sweeperWake <- struct{}{}:
+				default:
+				}
+			}
+		})
 		// One background worker hashes what the brew tap history still lacks, so no tap request has to.
 		go func() {
 			if err := brew.BackfillHistoryDigests(ctx); err != nil {
@@ -182,7 +182,8 @@ var serveCmd = &cobra.Command{
 			}
 		}()
 
-		startRetentionSweeper(ctx, cfg, database, store)
+		startRetentionSweeper(ctx, database, store, sweeperWake)
+		busy := func() bool { return admin.InflightWrites() > 0 }
 		// Reclaim leftover scratch for as long as the process runs.
 		go runScratchJanitor(ctx, cfg)
 		// Sweep expired chunked-upload sessions (abandoned spool files).
@@ -193,9 +194,13 @@ var serveCmd = &cobra.Command{
 			DataDir:        cfg.DataDir,
 			Keep:           cfg.RunFilesKeep,
 			MinFreePercent: cfg.RunFilesMinFreePercent,
-			RunEnded:       auth.GitHubRunEnded,
-			Disk:           diskusage.Get,
-			Busy:           func() bool { return admin.InflightWrites() > 0 },
+			Live: func() (time.Duration, float64) {
+				c := config.Current()
+				return c.RunFilesKeep, c.RunFilesMinFreePercent
+			},
+			RunEnded: auth.GitHubRunEnded,
+			Disk:     diskusage.Get,
+			Busy:     busy,
 		}).Start(ctx)
 		(&cicache.Janitor{
 			DB:             database,
@@ -203,8 +208,12 @@ var serveCmd = &cobra.Command{
 			DataDir:        cfg.DataDir,
 			Keep:           cfg.CacheKeep,
 			MinFreePercent: cfg.CacheMinFreePercent,
-			Disk:           diskusage.Get,
-			Busy:           func() bool { return admin.InflightWrites() > 0 },
+			Live: func() (time.Duration, float64) {
+				c := config.Current()
+				return c.CacheKeep, c.CacheMinFreePercent
+			},
+			Disk: diskusage.Get,
+			Busy: busy,
 		}).Start(ctx)
 		(&mirror.Janitor{
 			DB:             database,
@@ -212,8 +221,12 @@ var serveCmd = &cobra.Command{
 			DataDir:        cfg.DataDir,
 			Keep:           cfg.MirrorKeep,
 			MinFreePercent: cfg.MirrorMinFreePercent,
-			Disk:           diskusage.Get,
-			Busy:           func() bool { return admin.InflightWrites() > 0 },
+			Live: func() (time.Duration, float64) {
+				c := config.Current()
+				return c.MirrorKeep, c.MirrorMinFreePercent
+			},
+			Disk: diskusage.Get,
+			Busy: busy,
 		}).Start(ctx)
 
 		select {
@@ -297,47 +310,6 @@ func sweepEvery(staleAge time.Duration) time.Duration {
 }
 
 var errRestartRequested = errors.New("restart requested from the admin dashboard")
-
-// startRetentionSweeper launches the background GC sweeper when a positive
-// interval is configured. It is report-only unless BUILDHOST_RETENTION_ENFORCE is
-// set, defers a tick. This holds while writes are in flight (the same counter
-// /ready-to-update uses), and exits when ctx is cancelled at shutdown.
-func startRetentionSweeper(ctx context.Context, cfg config.Config, database *db.DB, store storage.Storage) {
-	if cfg.RetentionInterval <= 0 {
-		return
-	}
-	slog.Info("retention sweeper enabled",
-		"interval", cfg.RetentionInterval, "enforce", cfg.RetentionEnforce)
-	go func() {
-		t := time.NewTicker(cfg.RetentionInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if n := admin.InflightWrites(); n > 0 {
-					slog.Info("retention: deferring sweep, writes in flight", "inflight", n)
-					continue
-				}
-				// Read the live (dashboard-editable) policy each cycle so edits
-				settings, err := database.GetRetentionSettings(ctx)
-				if err != nil {
-					slog.Error("retention sweep: load settings failed", "err", err)
-					continue
-				}
-				ret := retention.New(database, store, retention.ConfigFromSettings(settings, cfg.RetentionEnforce)).
-					WithRecordDeleter(recordDeleterFor(cfg))
-				rep, err := ret.Run(ctx)
-				if err != nil {
-					slog.Error("retention sweep failed", "err", err)
-					continue
-				}
-				logRetentionReport(rep)
-			}
-		}
-	}()
-}
 
 func logRetentionReport(rep retention.Report) {
 	if rep.Enforced {

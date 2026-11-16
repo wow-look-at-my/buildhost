@@ -66,7 +66,7 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 	for idx, b := range blobs {
 		blobRows[len(blobs)-1-idx] = mirrorBlobRow{
 			Upstream: b.Upstream, Digest: b.Digest, MediaType: b.MediaType, Size: b.Size,
-			CreatedAt: b.CreatedAt, UsedAt: b.UsedAt, Reads: b.Reads, ExpiresAt: b.UsedAt.Add(s.cfg.MirrorKeep),
+			CreatedAt: b.CreatedAt, UsedAt: b.UsedAt, Reads: b.Reads, ExpiresAt: b.UsedAt.Add(s.conf().MirrorKeep),
 		}
 		total += b.Size
 	}
@@ -89,10 +89,10 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 		upstreams[idx] = mirrorUpstreamRow{Service: u.Service, Remote: u.Remote, URL: auth.DeriveServiceURL(r, "oci").String() + "/v2/" + u.Service + "/"}
 	}
 	resp := map[string]any{
-		"keep_seconds":           int64(s.cfg.MirrorKeep / time.Second),
+		"keep_seconds":           int64(s.conf().MirrorKeep / time.Second),
 		"check_interval_seconds": int64(mirror.CheckInterval / time.Second),
 		"tag_ttl_seconds":        int64(mirror.TagTTL / time.Second),
-		"min_free_percent":       s.cfg.MirrorMinFreePercent,
+		"min_free_percent":       s.conf().MirrorMinFreePercent,
 		"total_bytes":            total,
 		"upstreams":              upstreams,
 		"blobs":                  blobRows,
@@ -102,7 +102,7 @@ func (s *Server) apiMirror(w http.ResponseWriter, r *http.Request) {
 		"release_assets": assetRows,
 		"janitor":        mirror.LastReport(),
 	}
-	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.conf().DataDir); err == nil && du.Total > 0 {
 		resp["disk_free"] = du.Free
 		resp["disk_total"] = du.Total
 		resp["disk_used"] = du.Used

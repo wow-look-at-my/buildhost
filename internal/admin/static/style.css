@@ -992,8 +992,17 @@ copy-btn {
 	cursor: pointer;
 }
 
-.settings-error {
+.settings-error,
+.settings-warning {
 	flex-basis: 100%;
+}
+
+.settings-warning {
+	color: var(--yellow);
+}
+
+.form-input-invalid {
+	border-color: var(--red);
 }
 
 .settings-form-pem {

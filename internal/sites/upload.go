@@ -80,7 +80,11 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
 			return
 		}
-		fetched, fetchedCT, err := fetchFromURL(ctx, fetchReq.URL, fetchReq.Headers, h.FetchDomains)
+		domains := h.FetchDomains
+		if domains == nil {
+			domains = auth.SiteFetchDomains()
+		}
+		fetched, fetchedCT, err := fetchFromURL(ctx, fetchReq.URL, fetchReq.Headers, domains)
 		if err != nil {
 			span.RecordError(err)
 			http.Error(w, jsonErrorDoc(err.Error()), http.StatusBadRequest)

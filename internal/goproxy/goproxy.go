@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -109,12 +110,46 @@ func init() {
 	auth.OnReady(func() {
 		startOnce.Do(func() {
 			s := newService(loadConfig(auth.OIDCOrgs()), auth.DB(), auth.Store(), scratch.Root())
+			ctx, cancel := context.WithCancel(context.Background())
 			serviceMu.Lock()
-			service = s
+			service, stopReadiness = s, cancel
 			serviceMu.Unlock()
-			s.startReadiness(context.Background())
+			s.startReadiness(ctx)
+			config.OnChange(func(c config.Config) { reconfigure(loadConfig(c.OIDCOrgs)) })
 		})
 	})
+}
+
+// stopReadiness ends the readiness loop of the running Service.
+var stopReadiness context.CancelFunc
+
+// reconfigure replaces the running Service with one that uses cfg. The
+// counters, the last health result and the GitHub source carry over.
+func reconfigure(cfg Config) {
+	serviceMu.Lock()
+	old := service
+	if old == nil || reflect.DeepEqual(old.cfg, cfg) {
+		serviceMu.Unlock()
+		return
+	}
+	s := &Service{
+		cfg:      cfg,
+		db:       old.db,
+		store:    old.store,
+		github:   old.github,
+		upstream: newUpstreamSource(old.github.client, cfg.Upstream),
+		metrics:  old.metrics,
+		health:   old.health,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stop := stopReadiness
+	service, stopReadiness = s, cancel
+	serviceMu.Unlock()
+	if stop != nil {
+		stop()
+	}
+	slog.Info("goproxy: settings changed", "private_prefixes", cfg.PrivatePrefixes, "upstream", cfg.Upstream, "readiness_module", cfg.ReadinessModule)
+	go s.startReadiness(ctx)
 }
 
 // metrics are process-lifetime counters. They are deliberately in memory and
