@@ -1,6 +1,6 @@
 # Routing, auth and the browse frontend
 
-`internal/auth/`, `internal/web/`, `internal/llms/`. Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
+Extracted verbatim from CLAUDE.md. Paragraph breaks go at the existing topic boundaries. No wording changed.
 
 ## internal/auth
 
@@ -10,7 +10,7 @@ There is no per-subdomain dispatch table.
 
 `downloadtoken.go` mints and verifies **stateless, artifact-bound, expiring download tokens**. Each is an HMAC-SHA256 over `(project, version, os, arch, fmt, debug, expiry)` with a `bhdl_` prefix. The key persists at `{DataDir}/download-signing.key` and is generated on first start, like the APT key. The temporary-link endpoints use them. The file also holds `ApexServiceURL`, which derives the registry apex from any request Host by a strip of a known leading service or admin label. It is correct from the apex API too, where the unconditional-strip `DeriveServiceURL` is not.
 
-`sso.go` implements the **cross-domain sign-in handoff** for the optional site domain. See the Browser sign-in security note. `SiteDomainHandle` and `SiteDomainHandleRaw` register `{project}.<site-domain>` routes. `siteApexOf` is the apex-classifier. The site domain, or exactly one label under it, is its OWN apex. `apexRootURL`, `apexHost`, `safeNextURL` and `ApexServiceURL` all honor that.
+`sso.go` implements the **cross-domain sign-in handoff** for the optional site domain. See the Browser sign-in security note. `SiteDomainHandle` and `SiteDomainHandleRaw` register `{project}.<site-domain>` routes. `siteApexOf` is the apex-classifier. The site domain, or exactly one label under it, is its OWN apex.
 
 `/__sso` redeems the one-time handoff codes `/__signin` mints on the primary apex (`BUILDHOST_PRIMARY_DOMAIN`).
 
@@ -28,7 +28,7 @@ A pattern that genuinely depends on configuration registers through `auth.OnSite
 
 ## internal/web
 
-A public, read-only browse frontend on the main domain, with no subdomain. Go `html/template` renders the HTML on the server. The templates and the single `static/style.css` are embedded. There is **no JavaScript**. The registry is therefore indexable and consumable without a SPA. The routes are `GET /` (the public project index, which filters private projects the way `GET /api/v1/projects` does), `GET /projects/{project}`, `GET /projects/{project}/releases/{version}` and `GET /_ui/style.css`.
+A public, read-only browse frontend on the main domain, with no subdomain. Go `html/template` renders the HTML on the server. The templates and the single `static/style.css` are embedded. There is **no JavaScript**. The registry is therefore indexable and consumable without a SPA.
 
 A project or release page registers through `auth.Handle` with `auth.HiddenReadAccess`. The shared `requireProject` middleware, the single home of project-auth, therefore enforces visibility. It returns a **`404`** and never a `401` for a private project the viewer may not see. That is indistinguishable from a project that does not exist, which is the GitHub style, and it leaks no existence. A read-scoped token authorized for the project reveals it. Only a published release is shown.
 

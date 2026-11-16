@@ -7,9 +7,11 @@ package config
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -36,10 +38,8 @@ type Setting struct {
 	Kind        Kind   `json:"kind"`
 	Default     string `json:"default"`
 	Description string `json:"description"`
-	// EnvOnly settings are read before the database opens.
+	// EnvOnly settings are read before the database opens. The dashboard cannot change them.
 	EnvOnly bool `json:"env_only"`
-	// Live settings are read on each use. The others apply at the next start.
-	Live bool `json:"live"`
 }
 
 // Secret reports a setting whose value never goes back to the dashboard.
@@ -79,10 +79,10 @@ var Settings = []Setting{
 	{Name: "BUILDHOST_RETENTION_KEEP_N", Group: "Retention", Kind: KindInt, Default: "10", Description: "Seeds the retention policy on first start. The Retention page edits the live policy."},
 	{Name: "BUILDHOST_RETENTION_RECENCY_GUARD", Group: "Retention", Kind: KindDuration, Default: "24h", Description: "Seeds the retention policy on first start. The Retention page edits the live policy."},
 
-	{Name: "BUILDHOST_MAX_UPLOAD_SIZE", Group: "Uploads", Kind: KindBytes, Default: "2G", Live: true, Description: "Cap on one REST artifact upload."},
-	{Name: "BUILDHOST_MAX_BLOB_SIZE", Group: "Uploads", Kind: KindBytes, Default: "10G", Live: true, Description: "Cap on one OCI blob."},
-	{Name: "BUILDHOST_MAX_DIRECT_UPLOAD_SIZE", Group: "Uploads", Kind: KindBytes, Default: "95M", Live: true, Description: "The direct upload size the server advertises. Larger bodies go in chunks."},
-	{Name: "BUILDHOST_UPLOAD_SESSION_TTL", Group: "Uploads", Kind: KindDuration, Default: "24h", Live: true, Description: "How long an idle chunked upload session lives."},
+	{Name: "BUILDHOST_MAX_UPLOAD_SIZE", Group: "Uploads", Kind: KindBytes, Default: "2G", Description: "Cap on one REST artifact upload."},
+	{Name: "BUILDHOST_MAX_BLOB_SIZE", Group: "Uploads", Kind: KindBytes, Default: "10G", Description: "Cap on one OCI blob."},
+	{Name: "BUILDHOST_MAX_DIRECT_UPLOAD_SIZE", Group: "Uploads", Kind: KindBytes, Default: "95M", Description: "The direct upload size the server advertises. Larger bodies go in chunks."},
+	{Name: "BUILDHOST_UPLOAD_SESSION_TTL", Group: "Uploads", Kind: KindDuration, Default: "24h", Description: "How long an idle chunked upload session lives."},
 
 	{Name: "BUILDHOST_STORAGE_COMPRESS", Group: "Server", Kind: KindBool, Default: "true", Description: "zstd-compress stored blobs."},
 	{Name: "BUILDHOST_OTEL_ENDPOINT", Group: "Server", Kind: KindString, Description: "OTLP/HTTP endpoint for traces and logs. Empty disables telemetry."},
@@ -136,25 +136,78 @@ func Getenv(name string) string {
 	return v
 }
 
-var started atomic.Pointer[map[string]string]
+var (
+	current  atomic.Pointer[Config]
+	changeMu sync.Mutex
+	onChange []func(Config)
+)
 
-// MarkStarted records the value of each setting the running server loaded.
-func MarkStarted() {
-	m := make(map[string]string, len(Settings))
-	for _, s := range Settings {
-		m[s.Name] = Getenv(s.Name)
+// Current returns the configuration in use. Reload replaces it.
+func Current() Config {
+	if c := current.Load(); c != nil {
+		return *c
 	}
-	started.Store(&m)
+	return Load()
 }
 
-// RestartPending reports a setting whose value changed after the server loaded
-// it. Such a value applies at the next start.
-func RestartPending(s Setting) bool {
-	m := started.Load()
-	if s.Live || m == nil {
-		return false
+// Reload loads the configuration again and gives it to each OnChange
+// function, in the order they registered. Call it after SetStored.
+func Reload() Config {
+	changeMu.Lock()
+	defer changeMu.Unlock()
+	c := Load()
+	current.Store(&c)
+	for _, fn := range onChange {
+		fn(c)
 	}
-	return (*m)[s.Name] != Getenv(s.Name)
+	return c
+}
+
+// OnChange registers fn to receive the configuration on each Reload. fn must
+// not call Reload or OnChange.
+func OnChange(fn func(Config)) {
+	changeMu.Lock()
+	defer changeMu.Unlock()
+	onChange = append(onChange, fn)
+}
+
+// CheckChange tests one change to the stored values and applies nothing. A nil
+// value removes the stored value. The error says why the change cannot be
+// saved. The warning names a saved state that does not work yet, such as half
+// of a pair.
+func CheckChange(name string, value *string) (warning string, err error) {
+	s, ok := LookupSetting(name)
+	if !ok {
+		return "", fmt.Errorf("%s is not a setting", name)
+	}
+	if value != nil {
+		if err := CheckValue(s, *value); err != nil {
+			return "", err
+		}
+	} else if s.EnvOnly {
+		return "", fmt.Errorf("%s is read from the environment only", s.Name)
+	}
+	c := loadWith(func(n string) (string, bool) {
+		if n == name {
+			if value != nil {
+				return *value, true
+			}
+			return os.LookupEnv(n)
+		}
+		return LookupEnv(n)
+	})
+	if err := c.Validate(); err != nil {
+		return "", err
+	}
+	if s.Group == "GitHub" {
+		switch p := c.GitHubAppProblem(); {
+		case p != "":
+			warning = p
+		case c.SecretServerToken != "" && (c.GitHubToken != "" || c.HasGitHubApp()):
+			warning = "BUILDHOST_SECRET_SERVER_TOKEN is not used while BUILDHOST_GITHUB_TOKEN or the GitHub App is set"
+		}
+	}
+	return warning, nil
 }
 
 // Source says where the value of name comes from: "dashboard", "environment" or "default".
@@ -207,6 +260,72 @@ func CheckValue(s Setting, value string) error {
 	}
 	if s.Name == "BUILDHOST_SECRET_SERVER_TOKEN" && !strings.HasPrefix(v, "sst_") {
 		return fmt.Errorf("%s: want a secret-server machine token, which starts with sst_", s.Name)
+	}
+	if check := formatChecks[s.Name]; check != nil {
+		items := []string{v}
+		if s.Kind == KindList {
+			items = strings.Split(v, ",")
+		}
+		for _, item := range items {
+			if item = strings.TrimSpace(item); item == "" {
+				continue
+			}
+			if err := check(item); err != nil {
+				return fmt.Errorf("%s: %w", s.Name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// formatChecks holds the shape check for one value of a setting. For a list
+// setting it checks each item.
+var formatChecks = map[string]func(string) error{
+	"BUILDHOST_PRIMARY_DOMAIN": func(v string) error {
+		if v == PrimaryDomainAny {
+			return nil
+		}
+		return checkDomain(v)
+	},
+	"BUILDHOST_SITE_DOMAIN":              checkDomain,
+	"BUILDHOST_SITE_FETCH_DOMAINS":       checkDomain,
+	"BUILDHOST_OIDC_ISSUERS":             checkURL,
+	"BUILDHOST_OTEL_ENDPOINT":            checkURL,
+	"BUILDHOST_GOPROXY_UPSTREAM":         checkURL,
+	"BUILDHOST_GOPROXY_READINESS_MODULE": checkModulePath,
+	"BUILDHOST_GOPROXY_PRIVATE_PREFIXES": checkModulePath,
+}
+
+// checkDomain accepts a host name or an IP address with no scheme, port or path.
+func checkDomain(v string) error {
+	d := normalizeDomain(v)
+	if d == "" || len(d) > 253 {
+		return fmt.Errorf("%q is not a domain name", v)
+	}
+	for _, label := range strings.Split(d, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return fmt.Errorf("%q is not a domain name: want a bare host such as example.com, with no scheme, port or path", v)
+		}
+		for _, c := range label {
+			if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-' {
+				return fmt.Errorf("%q is not a domain name: want a bare host such as example.com, with no scheme, port or path", v)
+			}
+		}
+	}
+	return nil
+}
+
+func checkURL(v string) error {
+	u, err := url.Parse(v)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%q is not a URL: want http:// or https:// and a host", v)
+	}
+	return nil
+}
+
+func checkModulePath(v string) error {
+	if strings.Contains(v, "://") || strings.ContainsAny(v, " \t") || !strings.Contains(v, ".") {
+		return fmt.Errorf("%q is not a module path: want a path such as github.com/org/repo, with no scheme", v)
 	}
 	return nil
 }

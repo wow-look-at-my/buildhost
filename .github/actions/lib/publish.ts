@@ -19,7 +19,6 @@ import { mintOidcToken } from './oidc.ts';
 import { downloadRunArtifact } from './run-artifact.ts';
 import { dependsList } from './depends.ts';
 
-/** The create_service, default_branch, apt_depends and depends fields go only when set, so an empty input leaves the stored setting untouched. */
 export function releaseBody(f: { gitBranch: string; gitCommit: string; version: string; createService: string; defaultBranch: string; aptDepends: string; depends: string }): string {
 	const depends = dependsList(f.depends);
 	return JSON.stringify({

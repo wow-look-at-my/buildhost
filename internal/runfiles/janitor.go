@@ -32,6 +32,8 @@ type Janitor struct {
 	DataDir        string
 	Keep           time.Duration
 	MinFreePercent float64
+	// Live returns the current Keep and MinFreePercent. Start reads it before each sweep.
+	Live func() (time.Duration, float64)
 
 	// RunEnded asks GitHub whether a run is complete. See auth.GitHubRunEnded.
 	RunEnded func(ctx context.Context, repoPath, runID string) (time.Time, bool, error)
@@ -83,6 +85,9 @@ func (j *Janitor) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if j.Live != nil {
+					j.Keep, j.MinFreePercent = j.Live()
+				}
 				if j.Busy != nil && j.Busy() {
 					slog.Info("run files: deferring sweep, writes in flight")
 					lastReport.Store(&Report{At: time.Now(), Deferred: true})

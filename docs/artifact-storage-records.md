@@ -82,7 +82,7 @@ Neglect rejected a warn-and-continue path. The publish then stays green while th
 
 This is a deliberate divergence from the deployment steps' graceful-skip contract. A deployment is a nicety. A record of what the registry now holds is part of the publish being complete. The LOW-LEVEL blocks post no record. create-release, upload-artifact and publish-release are among them. They are components, and the top-level composites are the pipeline.
 
-**The thing that suppresses a record is a property of the target, not a switch.** A `registry_url` whose host is `localhost`, `127.0.0.1` or `::1` is skipped, with an info line. A loopback server is not a registry anything can fetch from. The row is permanently unreachable. That is what keeps buildhost's own `upload-artifact-action-e2e` from writing junk into the org's inventory, because that job publishes a site to `http://localhost:18080`. Every real publish records unconditionally.
+**The thing that suppresses a record is a property of the target, not a switch.** A loopback server is not a registry anything can fetch from. The row is permanently unreachable. That is what keeps buildhost's own `upload-artifact-action-e2e` from writing junk into the org's inventory, because that job publishes a site to `http://localhost:18080`. Every real publish records unconditionally.
 
 ## API field constraints that are easy to get wrong
 
@@ -94,7 +94,7 @@ These come from GitHub's OpenAPI description, and each bit.
 
 `artifact_url` is capped at **152** characters. A deeply namespaced project exceeds that. An over-long URL is therefore dropped with a warning, rather than a failure of an otherwise-successful publish.
 
-`digest` must match `^sha256:[a-f0-9]{64}$`, in lowercase. `name`, `repository` and `path` carry no pattern, so a slash-namespaced project name and an `<os>/<arch>` path are both fine.
+`digest` must match `^sha256:[a-f0-9]{64}$`, in lowercase.
 
 ## The recorded digest is always the sha256 of the bytes as UPLOADED
 
@@ -118,6 +118,6 @@ Several properties make this work where CI cannot. Eviction runs in the backgrou
 
 `registry_url` must equal what the publishing CI recorded, which is buildhost's own public base URL. The server is otherwise never told its own URL. This path therefore reads `BUILDHOST_PRIMARY_DOMAIN`.
 
-A project with no `github_repo` is skipped, because nothing addressable was ever posted. A *failure* never aborts the eviction. The bytes are already gone, and a refusal to GC over a GitHub outage is worse. Such a failure is counted in `Report.RecordsMarkedDeleted`, `Report.RecordsUnmarked` and `Report.RecordErrors`. `gc` prints those counts, and it exits NON-ZERO on any unmarked record in enforce mode. The sweeper logs them at WARN.
+A project with no `github_repo` is skipped, because nothing addressable was ever posted. A *failure* never aborts the eviction. The bytes are already gone, and a refusal to GC over a GitHub outage is worse. Such a failure is counted. `gc` prints those counts, and it exits NON-ZERO on any unmarked record in enforce mode. The sweeper logs them at WARN.
 
 A dry run reports what it retracts and calls nothing. The GitHub App needs artifact-metadata write on the org. A 403 says exactly that. `TestRun_NoDeleterReportsUnmarkedRatherThanSilentlySkipping` is the load-bearing test. An eviction with no deleter wired must REPORT the gap, and must never pass quietly.

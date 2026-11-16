@@ -88,7 +88,7 @@ An operator who does want a mirror sets `BUILDHOST_GOPROXY_UPSTREAM` explicitly,
 
 ## Checksum database mirror
 
-`/sumdb/sum.golang.org/...` forwards `lookup/`, `tile/` and `latest` to `https://sum.golang.org`, and answers `supported` with 200. A job whose egress reaches only this proxy can then still verify public modules:
+A job whose egress reaches only this proxy can then still verify public modules:
 
 ```
 GOSUMDB="sum.golang.org+033de0ae+Ac4zctda0e5eza+HJyk9SxEdh+s3Ey18htn1gj0VGAOQ https://goproxy.pazer.build/sumdb/sum.golang.org"
