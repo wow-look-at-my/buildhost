@@ -31,6 +31,7 @@ import type {
     MirrorReleaseAssetRow,
     MirrorTagRow,
     ServiceURLs,
+    SettingCheck,
     SettingRow,
     SettingsData,
     SidebarData,
@@ -1909,13 +1910,13 @@ const demoData: Record<string, unknown> = {
     "/settings": {
         can_restart: true,
         settings: [
-            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, live: false, value: "example.com", set: true, source: "environment", restart_pending: false },
-            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: true },
-            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, live: false, value: "", set: true, source: "dashboard", restart_pending: false, fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
-            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
-            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, live: false, value: "", set: false, source: "default", restart_pending: false },
-            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, live: true, value: "4G", set: true, source: "dashboard", restart_pending: false },
-            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, live: false, value: "/data", set: true, source: "environment", restart_pending: false }
+            { name: "BUILDHOST_PRIMARY_DOMAIN", group: "Domains", kind: "string", default: "", description: "The apex that owns the web UI.", env_only: false, value: "example.com", set: true, source: "environment" },
+            { name: "BUILDHOST_SECRET_SERVER_TOKEN", group: "GitHub", kind: "secret", default: "", description: "secret-server machine token.", env_only: false, value: "", set: true, source: "dashboard" },
+            { name: "BUILDHOST_GITHUB_APP_PRIVATE_KEY", group: "GitHub", kind: "pem", default: "", description: "GitHub App private key: the PEM text, or a path to the PEM file.", env_only: false, value: "", set: true, source: "dashboard", fingerprint: "SHA256:c5Kx0sA8m2Q1yJ9Xh0v3m6eZfQn1uYk7bR2wT4pLs8E=" },
+            { name: "BUILDHOST_STORAGE_COMPRESS", group: "Server", kind: "bool", default: "true", description: "zstd-compress stored blobs.", env_only: false, value: "", set: false, source: "default" },
+            { name: "BUILDHOST_RUN_FILES_KEEP", group: "Janitors", kind: "duration", default: "24h", description: "How long a run's files outlive the run.", env_only: false, value: "", set: false, source: "default" },
+            { name: "BUILDHOST_MAX_UPLOAD_SIZE", group: "Uploads", kind: "bytes", default: "2G", description: "Cap on one REST artifact upload.", env_only: false, value: "4G", set: true, source: "dashboard" },
+            { name: "BUILDHOST_DATA_DIR", group: "Server", kind: "string", default: "./data", description: "Blob store and temp directory.", env_only: true, value: "/data", set: true, source: "environment" }
         ]
     },
     "/retention": {
