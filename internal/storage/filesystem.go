@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -28,8 +29,11 @@ var (
 
 type Filesystem struct {
 	root     *os.Root
-	compress bool
+	compress atomic.Bool
 }
+
+// SetCompress turns zstd compression of new blobs on or off.
+func (fs *Filesystem) SetCompress(on bool) { fs.compress.Store(on) }
 
 func NewFilesystem(rootPath string, compress bool) (*Filesystem, error) {
 	if err := os.MkdirAll(rootPath, 0o755); err != nil {
@@ -39,7 +43,9 @@ func NewFilesystem(rootPath string, compress bool) (*Filesystem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open storage root: %w", err)
 	}
-	return &Filesystem{root: root, compress: compress}, nil
+	fs := &Filesystem{root: root}
+	fs.compress.Store(compress)
+	return fs, nil
 }
 
 func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error) {
@@ -70,7 +76,7 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 		return "", 0, fmt.Errorf("create shard dir: %w", err)
 	}
 
-	if !fs.compress {
+	if !fs.compress.Load() {
 		if err := rawTmp.Close(); err != nil {
 			return "", 0, fmt.Errorf("close temp file: %w", err)
 		}
@@ -124,10 +130,10 @@ func (fs *Filesystem) Put(_ context.Context, r io.Reader) (string, int64, error)
 // PutUncompressed stores a blob without the storage layer's zstd wrapper, so
 // it can be read at an offset later (see OpenReaderAt).
 func (fs *Filesystem) PutUncompressed(ctx context.Context, r io.Reader) (string, int64, error) {
-	if !fs.compress {
+	if !fs.compress.Load() {
 		return fs.Put(ctx, r) // already the uncompressed path
 	}
-	raw := &Filesystem{root: fs.root, compress: false}
+	raw := &Filesystem{root: fs.root}
 	return raw.Put(ctx, r)
 }
 

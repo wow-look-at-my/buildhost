@@ -37,19 +37,19 @@ func (s *Server) apiCache(w http.ResponseWriter, r *http.Request) {
 	for idx, e := range entries {
 		out[len(entries)-1-idx] = cacheEntryRow{
 			Repo: e.RepoPath, Ref: e.Ref, Key: e.Key, Size: e.Size, SHA256: e.StorageKey,
-			CreatedAt: e.CreatedAt, UsedAt: e.UsedAt, Reads: e.Reads, ExpiresAt: e.UsedAt.Add(s.cfg.CacheKeep),
+			CreatedAt: e.CreatedAt, UsedAt: e.UsedAt, Reads: e.Reads, ExpiresAt: e.UsedAt.Add(s.conf().CacheKeep),
 		}
 		total += e.Size
 	}
 	resp := map[string]any{
-		"keep_seconds":           int64(s.cfg.CacheKeep / time.Second),
+		"keep_seconds":           int64(s.conf().CacheKeep / time.Second),
 		"check_interval_seconds": int64(cicache.CheckInterval / time.Second),
-		"min_free_percent":       s.cfg.CacheMinFreePercent,
+		"min_free_percent":       s.conf().CacheMinFreePercent,
 		"total_bytes":            total,
 		"entries":                out,
 		"janitor":                cicache.LastReport(),
 	}
-	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.conf().DataDir); err == nil && du.Total > 0 {
 		resp["disk_free"] = du.Free
 		resp["disk_total"] = du.Total
 		resp["disk_used"] = du.Used

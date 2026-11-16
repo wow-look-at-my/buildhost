@@ -21,7 +21,6 @@ func init() {
 		handler.DB = auth.DB()
 		handler.Store = auth.Store()
 		handler.Orchestrator = repackage.NewOrchestrator(auth.Store(), auth.DB())
-		handler.GitHubWebhookSecret = auth.GitHubWebhookSecret()
 	})
 }
 

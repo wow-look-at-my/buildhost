@@ -73,8 +73,13 @@ func (s *Service) startReadiness(ctx context.Context) {
 		s.checkHealth(ctx)
 		t := time.NewTicker(readinessInterval)
 		defer t.Stop()
-		for range t.C {
-			s.checkHealth(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.checkHealth(ctx)
+			}
 		}
 	}()
 }

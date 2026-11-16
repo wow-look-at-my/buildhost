@@ -31,9 +31,23 @@ func (e *EventNotAllowedError) Error() string {
 type OIDCVerifier struct {
 	mu             sync.RWMutex
 	cache          map[string]*cachedJWKS
+	policyMu       sync.RWMutex
 	trustedIssuers []string
 	allowedOrgs    []string
 	allowedEvents  []string
+}
+
+// SetPolicy replaces the trusted issuers, orgs and events. The key cache stays.
+func (v *OIDCVerifier) SetPolicy(cfg OIDCConfig) {
+	v.policyMu.Lock()
+	defer v.policyMu.Unlock()
+	v.trustedIssuers, v.allowedOrgs, v.allowedEvents = cfg.TrustedIssuers, cfg.AllowedOrgs, cfg.AllowedEvents
+}
+
+func (v *OIDCVerifier) policy() OIDCConfig {
+	v.policyMu.RLock()
+	defer v.policyMu.RUnlock()
+	return OIDCConfig{TrustedIssuers: v.trustedIssuers, AllowedOrgs: v.allowedOrgs, AllowedEvents: v.allowedEvents}
 }
 
 type cachedJWKS struct {
@@ -145,7 +159,8 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 		}
 	}
 
-	if matchedPolicy == nil && !slices.Contains(v.trustedIssuers, unverified.Issuer) {
+	pol := v.policy()
+	if matchedPolicy == nil && !slices.Contains(pol.TrustedIssuers, unverified.Issuer) {
 		return nil, "", ErrOIDCNotMatched
 	}
 
@@ -192,14 +207,14 @@ func (v *OIDCVerifier) verifyTokenFull(ctx context.Context, raw string, policies
 	}
 
 	org := verified.ownerName()
-	if !orgAllowed(v.allowedOrgs, org, ownerID) {
+	if !orgAllowed(pol.AllowedOrgs, org, ownerID) {
 		if ownerID != "" {
 			return nil, "", fmt.Errorf("org %q (owner id %s) not in allowed list", org, ownerID)
 		}
 		return nil, "", fmt.Errorf("org %q not in allowed list", org)
 	}
 
-	if !slices.Contains(v.allowedEvents, "*") && !slices.Contains(v.allowedEvents, verified.EventName) {
+	if !slices.Contains(pol.AllowedEvents, "*") && !slices.Contains(pol.AllowedEvents, verified.EventName) {
 		return nil, "", &EventNotAllowedError{Event: verified.EventName}
 	}
 

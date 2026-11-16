@@ -16,7 +16,7 @@ sqlc generate
 
 ## Why the approval hash is required
 
-The `--generate <hash>` flag is go-toolchain's approval gate over the repo's `//go:generate` directives. It is REQUIRED here. The generated regex matchers, the sqlc code, the embedded CA bundle and the admin dashboard's JS are all gitignored build inputs. A fresh clone without generate therefore fails to compile (`undefined: validProjectNameRegex`, `pattern cacerts/ca-certificates.crt: no matching files found`, `pattern static/app.js: no matching files found`). Building needs npm as well as Go. go-toolchain prints the current hash when this one is stale. Update it in CLAUDE.md and in `.github/workflows/ci.yml` when a directive changes.
+The `--generate <hash>` flag is go-toolchain's approval gate over the repo's `//go:generate` directives. It is REQUIRED here. The generated regex matchers, the sqlc code, the embedded CA bundle and the admin dashboard's JS are all gitignored build inputs. A fresh clone without generate therefore fails to compile. Building needs npm as well as Go. go-toolchain prints the current hash when this one is stale. Update it in CLAUDE.md and in `.github/workflows/ci.yml` when a directive changes.
 
 ## The admin frontend
 

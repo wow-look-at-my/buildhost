@@ -50,7 +50,7 @@ A 401 used to go in the transient bucket. A browser whose 12h cookie outlived it
 
 The user re-authenticates as an account that has access. That replaces a dead-end JSON `401` no browser can act on. The resolved project goes into the request context before the access switch. The page can then name the repo. The page relaxes CSP to `default-src 'none'` plus `style-src 'unsafe-inline'` for one inline `<style>`. It runs no scripts.
 
-`safeNextURL` accepts only a same-site path, or an apex or subdomain URL. There is no open redirect. `apexRootURL` derives the apex by a strip of a known service label. The whole flow is apex-only (`/__signin`, `/__signin/callback` and `/__signout`, through `HandleRaw`), because GitHub OAuth registers a single callback URL. An unconfigured server falls a browser back to the plain JSON `401`. Programmatic clients and `/v2/` OCI never change.
+`safeNextURL` accepts only a same-site path, or an apex or subdomain URL. There is no open redirect. `apexRootURL` derives the apex by a strip of a known service label. The whole flow is apex-only, because GitHub OAuth registers a single callback URL. An unconfigured server falls a browser back to the plain JSON `401`. Programmatic clients and `/v2/` OCI never change.
 
 A public site (`X-Public-Site: true`) is still served with no auth at all.
 
@@ -74,10 +74,10 @@ Consider the cross-site theft shapes. A crafted signin link to an attacker's pub
 
 ## Unknown-domain exposure (scoped to the primary apex when configured)
 
-With `BUILDHOST_PRIMARY_DOMAIN` set, the web frontend (`/`, `/projects/*`, `/_ui/style.css`) and the WHOLE `/api/v1` surface answer only on that apex. They register through `auth.HandlePrimary` and `auth.HandleRawPrimary` (internal/auth/registry.go). The `primaryOnly` gate there compares the port-stripped, case-folded request Host against the configured apex. Any other unclaimed host gets the router's own `http.NotFound`. The gate runs BEFORE requireProject, so no auth semantics run off-apex at all: no 401, no sign-in redirect, no OIDC auto-provisioning. The 404 is byte-same to the one for a genuinely unregistered path, so there is no "buildhost but wrong host" fingerprint.
+With `BUILDHOST_PRIMARY_DOMAIN` set, the web frontend and the WHOLE `/api/v1` surface answer only on that apex. They register through `auth.HandlePrimary` and `auth.HandleRawPrimary` (internal/auth/registry.go). The `primaryOnly` gate there compares the port-stripped, case-folded request Host against the configured apex. Any other unclaimed host gets the router's own `http.NotFound`. The gate runs BEFORE requireProject, so no auth semantics run off-apex at all: no 401, no sign-in redirect, no OIDC auto-provisioning. The 404 is byte-same to the one for a genuinely unregistered path, so there is no "buildhost but wrong host" fingerprint.
 
 `TestPrimaryDomain_ScopesWebAndAPIToApex` pins that.
 
-Some routes stay host-agnostic on every unclaimed host, the bare site apex and a stray CNAME included. They are `/healthz` and `/ready-to-update` (a container-internal probe addresses the server by container DNS or localhost. `/healthz` still answers 404 on the CDN-cached service and site-domain hosts), `/llms.txt`. The sign-in flow (`/__signin`, `/__signin/callback` and `/__signout`), `/__sso` (bare-site-apex redemption relies on the fallthrough), and the `/npm/*` redirect to `npm.{domain}`. With `BUILDHOST_PRIMARY_DOMAIN` unset the historical fully-host-agnostic behavior is byte-same, so an IP or localhost deployment is unchanged. The gate is serve-time only.
+Some routes stay host-agnostic on every unclaimed host, the bare site apex and a stray CNAME included. They are `/healthz` and `/ready-to-update` (a container-internal probe addresses the server by container DNS or localhost. `/healthz` still answers 404 on the CDN-cached service and site-domain hosts), `/llms.txt`. The sign-in flow, `/__sso` (bare-site-apex redemption relies on the fallthrough), and the `/npm/*` redirect to `npm.{domain}`. With `BUILDHOST_PRIMARY_DOMAIN` unset the historical fully-host-agnostic behavior is byte-same, so an IP or localhost deployment is unchanged. The gate is serve-time only.
 
 A configured primary domain never changes the route table. `TestPrimaryDomain_UnsetKeepsHostAgnostic` pins both.

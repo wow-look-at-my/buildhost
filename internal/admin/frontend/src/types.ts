@@ -407,15 +407,22 @@ export interface SettingRow {
     default: string;
     description: string;
     env_only: boolean;
-    live: boolean;
     value: string;
     set: boolean;
     source: "dashboard" | "environment" | "default";
-    restart_pending: boolean;
     /** SHA-256 fingerprint of a stored key, as GitHub shows it. */
     fingerprint?: string;
     /** Why a stored value cannot work. */
     problem?: string;
+}
+
+/** The check of one value (admin POST /api/settings/{name}/validate). Nothing is stored. */
+export interface SettingCheck {
+    ok: boolean;
+    /** Why a save of this value is refused. */
+    error?: string;
+    /** What does not work yet after a save of this value. */
+    warning?: string;
 }
 
 export interface SettingsData {

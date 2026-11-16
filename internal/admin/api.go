@@ -33,7 +33,7 @@ func (s *Server) apiSidebar(w http.ResponseWriter, r *http.Request) {
 		"problems":    s.configProblems(),
 	}
 
-	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.conf().DataDir); err == nil && du.Total > 0 {
 		resp["disk_used"] = humanSize(int64(du.Used))
 		resp["disk_total"] = humanSize(int64(du.Total))
 	}
@@ -71,12 +71,12 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"recent": recent,
 		"config": map[string]any{
 			"base_url":          auth.RequestRootURL(r),
-			"listen_addr":       s.cfg.ListenAddr,
-			"admin_listen_addr": s.cfg.AdminListenAddr,
-			"data_dir":          s.cfg.DataDir,
-			"oidc_issuers":      s.cfg.OIDCIssuers,
-			"oidc_orgs":         s.cfg.OIDCOrgs,
-			"oidc_events":       s.cfg.OIDCEvents,
+			"listen_addr":       s.conf().ListenAddr,
+			"admin_listen_addr": s.conf().AdminListenAddr,
+			"data_dir":          s.conf().DataDir,
+			"oidc_issuers":      s.conf().OIDCIssuers,
+			"oidc_orgs":         s.conf().OIDCOrgs,
+			"oidc_events":       s.conf().OIDCEvents,
 		},
 		"services": serviceURLs(r),
 		"build": map[string]any{
@@ -89,7 +89,7 @@ func (s *Server) apiDashboard(w http.ResponseWriter, r *http.Request) {
 		"uptime":      formatDuration(time.Since(s.startTime)),
 		"cpu_percent": fmt.Sprintf("%.1f%%", cpuPct),
 		"cpu_total":   formatDuration(cpuTotal),
-		"disk_bytes":  blobsDiskUsage(s.cfg.DataDir + "/blobs"),
+		"disk_bytes":  blobsDiskUsage(s.conf().DataDir + "/blobs"),
 	})
 }
 
@@ -398,18 +398,18 @@ func (s *Server) apiStorage(w http.ResponseWriter, r *http.Request) {
 		"stripped_bytes": stats.StrippedBytes,
 		"debug_bytes":    stats.DebugBytes,
 		"packaged_bytes": stats.PackagedBytes,
-		"disk_bytes":     blobsDiskUsage(s.cfg.DataDir + "/blobs"),
+		"disk_bytes":     blobsDiskUsage(s.conf().DataDir + "/blobs"),
 	}
 
 	// Upper-bound estimate of what keep-N eviction would free (does not subtract
-	cutoff := time.Now().Add(-s.cfg.RetentionRecencyGuard)
-	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.cfg.RetentionKeepN), cutoff); err == nil {
+	cutoff := time.Now().Add(-s.conf().RetentionRecencyGuard)
+	if reclaimable, err := s.db.SumReclaimableBytes(r.Context(), int64(s.conf().RetentionKeepN), cutoff); err == nil {
 		resp["reclaimable_bytes"] = reclaimable
 	} else {
 		slog.Error("admin api error", "err", err, "path", r.URL.Path)
 	}
 
-	if du, err := diskusage.Get(s.cfg.DataDir); err == nil && du.Total > 0 {
+	if du, err := diskusage.Get(s.conf().DataDir); err == nil && du.Total > 0 {
 		resp["disk_used"] = du.Used
 		resp["disk_total"] = du.Total
 	}

@@ -1,6 +1,6 @@
 # Security notes (for future security reviews)
 
-Extracted verbatim from CLAUDE.md, no wording changed. The larger items moved to their own docs: `docs/security/github-signin.md` (browser sign-in, cross-domain handoff, primary-domain scoping), `docs/security/oidc.md` (the whole OIDC trust model), `docs/security/tokens-and-links.md` (scopes and temporary download links), `docs/apex-latest.md` (the default-branch GitHub lookup).
+Extracted verbatim from CLAUDE.md, no wording changed. The larger items moved to their own docs.
 
 The following items was reviewed and addressed or are intentional design choices:
 
