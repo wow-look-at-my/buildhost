@@ -1,6 +1,6 @@
 # Eviction / Retention Policy Design
 
-Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload sweep + reference-counted blob GC, report-only by default. Background sweeper, `buildhost gc` CLI, and an admin "Reclaimable" estimate. Size-watermark / LRU (needs a `last_accessed_at` signal) and dedicated docker/OCI GC remain deferred. Scope: how buildhost reclaims storage by evicting old releases safely, given content-addressed deduplication.
+Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload sweep and reference-counted blob GC, report-only by default. Background sweeper, `buildhost gc` CLI, and an admin "Reclaimable" estimate. Size-watermark / LRU (needs a `last_accessed_at` signal) and dedicated docker/OCI GC remain deferred. Scope: how buildhost reclaims storage by evicting old releases safely, given content-addressed deduplication.
 
 > **Correction from the original draft (Phase 1 "cache eviction" was dropped).**
 > The draft assumed the on-demand repackage formats (tar.gz/xz/zst, zip, deb,
@@ -23,7 +23,7 @@ Status: **Implemented** -- keep-N per `(project, git branch)` + abandoned-upload
 
 ## 1. Problem statement
 
-buildhost currently **never deletes a release or artifact**. The only `DELETE FROM` statements in the codebase target `sites`, `api_tokens`, and `oidc_policies` (`internal/db/queries/{sites,tokens,oidc}.sql`). There is no `DeleteRelease`, no `DeleteArtifact`, and no garbage collection. Every publish adds rows and blobs that live forever.
+buildhost currently **never deletes a release or artifact**. There is no `DeleteRelease`, no `DeleteArtifact`, and no garbage collection. Every publish adds rows and blobs that live forever.
 
 At the time of writing the instance holds projects / releases / artifacts and the GiB of the dashboard reports ~77.7 "Storage Used". With CI pushing a new release per branch per commit, this grows without bound. We need a way to bound it.
 
@@ -47,7 +47,6 @@ Because the key is the content hash, a single physical blob may be pointed at by
 
 | Table | Column(s) |
 |---|---|
-| `artifacts` | `storage_key`, `stripped_storage_key`, `debug_storage_key` |
 | `packaged_artifacts` | `storage_key` (on-demand repackage cache) |
 | `sites` | `storage_key` |
 | `oci_blob_links` | `storage_key` (pushed docker blobs + synthesized OCI layers) |

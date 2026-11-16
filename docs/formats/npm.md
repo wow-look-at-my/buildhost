@@ -4,7 +4,7 @@
 
 npm registry endpoint on `npm.{domain}/@buildhost/{project}`. Tarball URLs point to static. Self-registering via init().
 
-A pre-built `kind=npm-package` artifact's packument reflects the uploaded tarball's own `package.json` manifest. That means the dependency graph plus `bin`, `os`, `cpu` and `engines`. `name`, `version` and `dist` stay buildhost-authoritative, and a lifecycle `scripts` block never reaches the packument. Those fields are extracted lazily and cached per artifact in `packaged_artifacts` under `format="npm-manifest"`. Uncached, a packument decompressed EVERY published release's tarball. That took 44s for multiple releases, which is what made the live registry look hung.
+A pre-built `kind=npm-package` artifact's packument reflects the uploaded tarball's own `package.json` manifest. Those fields are extracted lazily and cached per artifact in `packaged_artifacts` under `format="npm-manifest"`. Uncached, a packument decompressed EVERY published release's tarball. That took 44s for multiple releases, which is what made the live registry look hung.
 
 Depth: `docs/npm-packument-manifest-cache.md`, for what is reflected and why, the cache contract, the cold-request bounds and the measurements.
 

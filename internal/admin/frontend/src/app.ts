@@ -31,6 +31,7 @@ import type {
     MirrorReleaseAssetRow,
     MirrorTagRow,
     ServiceURLs,
+    SettingCheck,
     SettingRow,
     SettingsData,
     SidebarData,

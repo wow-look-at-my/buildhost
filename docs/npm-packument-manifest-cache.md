@@ -2,9 +2,9 @@
 
 ## What the packument reflects (extracted verbatim from CLAUDE.md)
 
-A pre-built `kind=npm-package` artifact's packument **reflects the uploaded tarball's own `package.json` manifest**. It does not emit a bare `{name,version,dist}` stub. `npmManifestFields` reads `package/package.json` from the stored tarball. It surfaces `dependencies`, `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundle(d)Dependencies`, `bin`, `os`, `cpu` and `engines`. Without that, a package whose runtime depends on those fields publishes with an empty dependency graph and installs as an inert no-op. A launcher whose `optionalDependencies` are its per-platform binary packages is one such package. npm resolves against the packument, not the tarball.
+A pre-built `kind=npm-package` artifact's packument **reflects the uploaded tarball's own `package.json` manifest**. It does not emit a bare `{name,version,dist}` stub. `npmManifestFields` reads `package/package.json` from the stored tarball. Without that, a package whose runtime depends on those fields publishes with an empty dependency graph and installs as an inert no-op. A launcher whose `optionalDependencies` are its per-platform binary packages is one such package. npm resolves against the packument, not the tarball.
 
-`name`, `version` and `dist` stay buildhost-authoritative. A lifecycle `scripts` block is deliberately never surfaced, because serving a packument must not imply that install hooks run. An unreadable blob falls back to the minimal entry.
+A lifecycle `scripts` block is deliberately never surfaced, because serving a packument must not imply that install hooks run. An unreadable blob falls back to the minimal entry.
 
 ## The defect
 
