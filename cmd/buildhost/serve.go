@@ -27,11 +27,9 @@ import (
 	"github.com/wow-look-at-my/buildhost/internal/mirror"
 	"github.com/wow-look-at-my/buildhost/internal/retention"
 	"github.com/wow-look-at-my/buildhost/internal/runfiles"
-	"github.com/wow-look-at-my/buildhost/internal/secretserver"
 	"github.com/wow-look-at-my/buildhost/internal/server"
 	"github.com/wow-look-at-my/buildhost/internal/sites"
 	"github.com/wow-look-at-my/buildhost/internal/storage"
-	"github.com/wow-look-at-my/buildhost/internal/telemetry"
 	"github.com/wow-look-at-my/buildhost/internal/uploads"
 )
 
