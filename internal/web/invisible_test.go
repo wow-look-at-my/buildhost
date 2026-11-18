@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // invisible are the code points a person can not see and a shell does not
@@ -76,14 +77,14 @@ func TestFindInvisibleNamesTheCodePoint(t *testing.T) {
 // file a person copies a command from. None may hold an invisible code point.
 func TestNoFileHoldsAnInvisibleCharacter(t *testing.T) {
 	root := repoRoot(t)
-	skip := map[string]bool{".git": true, "node_modules": true, "build": true}
+	skip := set.Of[string](".git", "node_modules", "build")
 	checked := 0
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if skip[d.Name()] {
+			if skip.Contains(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
