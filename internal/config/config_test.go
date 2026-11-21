@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -165,4 +166,90 @@ func TestMaxSizes(t *testing.T) {
 	assert.Equal(t, defaultMaxUploadSize, MaxUploadSize())
 	t.Setenv("BUILDHOST_MAX_UPLOAD_SIZE", "500M")
 	assert.Equal(t, int64(500<<20), MaxUploadSize())
+}
+
+// The scratch root is TMPDIR unless a dedicated setting names one.
+func TestLoad_TempDirDefaultsToTmpdir(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_TEMP_DIR", "")
+	t.Setenv("TMPDIR", "/custom/tmpdir")
+
+	assert.Equal(t, "/custom/tmpdir", Load().TempDir)
+}
+
+func TestLoad_TempDirOverride(t *testing.T) {
+	t.Serial()
+	t.Setenv("TMPDIR", "/custom/tmpdir")
+	t.Setenv("BUILDHOST_TEMP_DIR", "/var/scratch")
+
+	assert.Equal(t, "/var/scratch", Load().TempDir)
+}
+
+func TestLoad_RecompressDefaults(t *testing.T) {
+	t.Serial()
+	for _, name := range []string{
+		"BUILDHOST_RECOMPRESS_CACHE_SIZE",
+		"BUILDHOST_RECOMPRESS_CACHE_ENTRIES",
+		"BUILDHOST_RECOMPRESS_CACHE_KEEP",
+		"BUILDHOST_TEMP_STALE_AGE",
+		"BUILDHOST_RECOMPRESS_PER_IP",
+		"BUILDHOST_RECOMPRESS_WINDOW",
+		"BUILDHOST_RECOMPRESS_LOAD_CEILING",
+	} {
+		t.Setenv(name, "")
+	}
+
+	c := Load()
+	assert.Equal(t, int64(512<<20), c.RecompressCacheLimit)
+	assert.Equal(t, 512, c.RecompressEntryLimit)
+	assert.Equal(t, time.Hour, c.RecompressTTL)
+	assert.Equal(t, time.Hour, c.ScratchAge)
+	assert.Equal(t, 20, c.RecompressPerIP)
+	assert.Equal(t, time.Minute, c.RecompressWindow)
+	assert.Equal(t, 1.0, c.RecompressLoadCeiling)
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	assert.NoError(t, Load().Validate())
+}
+
+func TestLoad_RecompressOverrides(t *testing.T) {
+	t.Serial()
+	t.Setenv("BUILDHOST_RECOMPRESS_CACHE_SIZE", "64M")
+	t.Setenv("BUILDHOST_RECOMPRESS_CACHE_ENTRIES", "8")
+	t.Setenv("BUILDHOST_RECOMPRESS_CACHE_KEEP", "30m")
+	t.Setenv("BUILDHOST_TEMP_STALE_AGE", "15m")
+	t.Setenv("BUILDHOST_RECOMPRESS_PER_IP", "1")
+	t.Setenv("BUILDHOST_RECOMPRESS_WINDOW", "10s")
+	t.Setenv("BUILDHOST_RECOMPRESS_LOAD_CEILING", "0.75")
+
+	c := Load()
+	assert.Equal(t, int64(64<<20), c.RecompressCacheLimit)
+	assert.Equal(t, 8, c.RecompressEntryLimit)
+	assert.Equal(t, 30*time.Minute, c.RecompressTTL)
+	assert.Equal(t, 15*time.Minute, c.ScratchAge)
+	assert.Equal(t, 1, c.RecompressPerIP)
+	assert.Equal(t, 10*time.Second, c.RecompressWindow)
+	assert.Equal(t, 0.75, c.RecompressLoadCeiling)
+	t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+	assert.NoError(t, Load().Validate())
+}
+
+// A setting that is set and does not parse stops the server at startup rather
+// than quietly reverting to a default.
+func TestLoad_InvalidDownloadSettingsFailValidation(t *testing.T) {
+	t.Serial()
+	for _, tt := range []struct{ name, value string }{
+		{"BUILDHOST_RECOMPRESS_CACHE_SIZE", "lots"},
+		{"BUILDHOST_RECOMPRESS_CACHE_ENTRIES", "-1"},
+		{"BUILDHOST_RECOMPRESS_CACHE_KEEP", "soon"},
+		{"BUILDHOST_TEMP_STALE_AGE", "never"},
+		{"BUILDHOST_RECOMPRESS_PER_IP", "many"},
+		{"BUILDHOST_RECOMPRESS_WINDOW", "an hour"},
+		{"BUILDHOST_RECOMPRESS_LOAD_CEILING", "high"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(tt.name, tt.value)
+			t.Setenv("BUILDHOST_PRIMARY_DOMAIN", "example.com")
+			assert.Error(t, Load().Validate())
+		})
+	}
 }

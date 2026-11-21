@@ -1,0 +1,166 @@
+package pack
+
+import (
+	"bytes"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// requireUPX skips when the host has no packer.
+func requireUPX(t *testing.T) {
+	t.Helper()
+	if !New(t.TempDir()).Available() {
+		t.Skip("no upx executable: packing is skipped on this host")
+	}
+}
+
+// buildELF compiles a real Linux executable to pack. A synthetic ELF is not
+// enough: the packer validates the program headers and refuses a stub.
+func buildELF(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	require.NoError(t, os.WriteFile(src, []byte(
+		"package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"packed-fixture\") }\n"), 0o644))
+	out := filepath.Join(dir, "fixture")
+	cmd := exec.Command("go", "build", "-o", out, src)
+	env := make([]string, 0, len(os.Environ())+3)
+	for _, kv := range os.Environ() {
+		// A test run under go-toolchain has -mod=vendor in GOFLAGS, which a
+		// standalone fixture file has no vendor directory for.
+		if strings.HasPrefix(kv, "GOFLAGS=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = append(env, "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Skipf("cannot build an ELF fixture (no go toolchain?): %s: %s", err, b)
+	}
+	return out
+}
+
+func TestPackShrinksAnELFAndRoundTrips(t *testing.T) {
+	t.Serial()
+	requireUPX(t)
+	dir := t.TempDir()
+	src := buildELF(t)
+	p := New(dir)
+
+	dst := filepath.Join(t.TempDir(), "packed")
+	ok, err := p.Pack(src, dst)
+	require.NoError(t, err)
+	require.True(t, ok, "a Go executable must be packable")
+
+	before, err := os.Stat(src)
+	require.NoError(t, err)
+	after, err := os.Stat(dst)
+	require.NoError(t, err)
+	assert.Less(t, after.Size(), before.Size(), "a packed binary must be smaller")
+
+	head, err := os.ReadFile(dst)
+	require.NoError(t, err)
+	assert.True(t, bytes.HasPrefix(head, []byte{0x7f, 'E', 'L', 'F'}), "packing must keep the ELF container")
+	assert.True(t, bytes.Contains(head, []byte("UPX!")), "the served file must be UPX-packed")
+
+	// Downloads of an immutable URL are byte-identical.
+	again := filepath.Join(t.TempDir(), "packed-again")
+	ok, err = p.Pack(src, again)
+	require.NoError(t, err)
+	require.True(t, ok)
+	a, err := os.ReadFile(dst)
+	require.NoError(t, err)
+	b, err := os.ReadFile(again)
+	require.NoError(t, err)
+	assert.Equal(t, a, b, "packing the same input twice must produce the same bytes")
+
+	// The packer's own verification unpacks the result; prove the runtime
+	// outcome directly where this host can run the fixture.
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		require.NoError(t, os.Chmod(dst, 0o755))
+		out, err := exec.Command(dst).CombinedOutput()
+		require.NoError(t, err)
+		assert.Equal(t, "packed-fixture\n", string(out))
+	}
+}
+
+func TestPackRefusesAnAPE(t *testing.T) {
+	t.Serial()
+	requireUPX(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "ape")
+	ape := append([]byte("MZqFpD"), bytes.Repeat([]byte{0x90}, 64<<10)...)
+	require.NoError(t, os.WriteFile(src, ape, 0o755))
+	dst := filepath.Join(dir, "packed")
+
+	ok, err := New(dir).Pack(src, dst)
+	assert.False(t, ok, "an APE the packer cannot prove is refused")
+	assert.Error(t, err)
+	_, statErr := os.Stat(dst)
+	assert.True(t, os.IsNotExist(statErr), "a refused pack leaves no output to serve")
+}
+
+// A non-executable input is refused rather than corrupted.
+func TestPackRefusesPlainData(t *testing.T) {
+	t.Serial()
+	requireUPX(t)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "data")
+	require.NoError(t, os.WriteFile(src, bytes.Repeat([]byte("not-executable"), 4096), 0o644))
+	dst := filepath.Join(dir, "packed")
+
+	ok, err := New(dir).Pack(src, dst)
+	assert.False(t, ok)
+	assert.Error(t, err)
+}
+
+// A host without a packer reports it, so the download path can strip alone.
+func TestPackWithoutAPacker(t *testing.T) {
+	t.Serial()
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv(EnvOverride, "")
+	p := New(t.TempDir())
+	assert.False(t, p.Available())
+	src := filepath.Join(t.TempDir(), "bin")
+	require.NoError(t, os.WriteFile(src, []byte("x"), 0o755))
+	ok, err := p.Pack(src, filepath.Join(t.TempDir(), "out"))
+	assert.False(t, ok)
+	assert.ErrorIs(t, err, ErrUnavailable)
+}
+
+// The image ships the packer beside the binary; an explicit setting wins over
+// it, and PATH is the last resort.
+func TestPackerResolution(t *testing.T) {
+	t.Serial()
+	dir := t.TempDir()
+	tool := filepath.Join(dir, "upx")
+	require.NoError(t, os.WriteFile(tool, []byte("#!/bin/sh\n"), 0o755))
+
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv(EnvOverride, tool)
+	assert.True(t, New(dir).Available())
+
+	plain := filepath.Join(dir, "not-executable")
+	require.NoError(t, os.WriteFile(plain, []byte("x"), 0o644))
+	t.Setenv(EnvOverride, plain)
+	assert.False(t, New(dir).Available(), "a configured path must be executable")
+
+	t.Setenv(EnvOverride, "")
+	assert.False(t, New(dir).Available(), "nothing on PATH and no image copy")
+}
+
+func TestPackRefusesAMissingInput(t *testing.T) {
+	t.Serial()
+	requireUPX(t)
+	dir := t.TempDir()
+	ok, err := New(dir).Pack(filepath.Join(dir, "absent"), filepath.Join(dir, "out"))
+	assert.False(t, ok)
+	assert.Error(t, err)
+}
