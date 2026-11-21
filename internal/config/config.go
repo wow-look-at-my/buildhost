@@ -135,6 +135,8 @@ type Config struct {
 	RetentionInterval     time.Duration
 	RetentionRecencyGuard time.Duration // never evict releases newer than this
 	RetentionEnforce      bool          // actually delete; false = report-only
+	// RetentionDeletedBranchDays seeds the stored deleted-branch window, in days; the dashboard owns the value after that.
+	RetentionDeletedBranchDays int
 
 	// Run files: how long a run's files outlive the run, and the free disk share below which ended runs go sooner.
 	RunFilesKeep           time.Duration
@@ -283,10 +285,11 @@ func loadWith(lk func(name string) (string, bool)) Config {
 		StorageCompress: true,
 		OIDCIssuers:     []string{"https://token.actions.githubusercontent.com"},
 
-		RetentionKeepN:        10,
-		RetentionInterval:     0,
-		RetentionRecencyGuard: 24 * time.Hour,
-		RetentionEnforce:      false,
+		RetentionKeepN:             10,
+		RetentionInterval:          0,
+		RetentionRecencyGuard:      24 * time.Hour,
+		RetentionEnforce:           false,
+		RetentionDeletedBranchDays: 30,
 
 		RunFilesKeep:           24 * time.Hour,
 		RunFilesMinFreePercent: 10,
@@ -378,6 +381,11 @@ func loadWith(lk func(name string) (string, bool)) Config {
 	if v := get("BUILDHOST_RETENTION_KEEP_N"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
 			c.RetentionKeepN = n
+		}
+	}
+	if v := get("BUILDHOST_RETENTION_DELETED_BRANCH_DAYS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			c.RetentionDeletedBranchDays = n
 		}
 	}
 	c.RetentionInterval = durationOr(get("BUILDHOST_RETENTION_INTERVAL"), c.RetentionInterval)

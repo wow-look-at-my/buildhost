@@ -88,7 +88,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer tel.Shutdown()
 
-		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours())); err != nil {
+		if err := database.SeedRetentionSettings(context.Background(), cfg.RetentionKeepN, int(cfg.RetentionRecencyGuard.Hours()), cfg.RetentionDeletedBranchDays); err != nil {
 			return fmt.Errorf("seed retention settings: %w", err)
 		}
 
