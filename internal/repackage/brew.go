@@ -212,6 +212,9 @@ type BrewFormula struct {
 	Kind        string
 	// Private marks a formula for a private project: it carries BrewPrivateStrategy.
 	Private bool
+	// Versioned marks a name@version formula, whose class Homebrew renames to <name>AT<version>.
+	Versioned bool
+	// Service adds a `service do` block so `brew services start` manages.
 	Service bool
 	// Depends lists the tap formula names of the formulas this depends on.
 	Depends   []string

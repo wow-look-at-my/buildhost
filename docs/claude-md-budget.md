@@ -18,7 +18,7 @@ The 40,000 figure is the CLI's own floor for the same measurement. Characters, n
 
 **2. The web config's `claude-md-budget` hook was installed in a stale version.** `PazerOP/claude-code-web-config` registers that hook on multiple events -- SessionStart (advise), PostToolUse (re-measure after every edit, including edits made through Bash that name no file path), and Stop (block the end of a turn that left a file over budget). The environment this repo's sessions ran in was provisioned from an older build: a 10,113-byte copy of the script registered on **SessionStart only**. No post-edit re-measure. No Stop gate. The escalation machinery existed upstream and was simply not present.
 
-**3. The message that did fire told the agent to stand down.** The stale SessionStart advisory ended with: "Do NOT go reorganize these files right now unless that IS the task. This stands context for when you next touch one of them.". A session that read the warning, correctly, did nothing about it. (The current upstream wording is the opposite -- "Editing one of these files this session? Then fix it as you go" -- which is another way of saying the fix had already been made upstream.
+**3. The message that did fire told the agent to stand down.** The stale SessionStart advisory ended with: "Do NOT go reorganize these files right now unless that IS the task. This stands context for when you next touch one of them." A session. That session read the warning, correctly, did nothing about it. (The current upstream wording is the opposite -- "Editing one of these files this session? Then fix it as you go" -- which is another way of saying the fix had already been made upstream.
 
 It had not reached here.)
 
@@ -40,8 +40,6 @@ It is not what this guard is for.
 ## How the file was brought back
 
 By extraction, not summarization. The prose moved into `docs/` VERBATIM. CLAUDE.md kept a one-line pointer to each file. Paragraph breaks go at the existing topic boundaries. No wording changed. 120,754 characters became 9,299, which is 23% of budget.
-
-Every backticked identifier in the file was checked, and each still exists somewhere in the tree.
 
 Things surfaced during the extraction that are worth recording, because both are symptoms of the same disease:
 

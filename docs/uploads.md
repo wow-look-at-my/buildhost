@@ -72,7 +72,7 @@ These are generic chunked upload sessions. A client can deliver an arbitrarily l
 
 **Finalize by reference** is the key move. The `ResolveSessionBody` middleware is wired in `internal/server`, between `Authenticate` and routing. It intercepts any mutating request that carries `?upload_session=<id>` with an empty body. It verifies ownership, and answers 404 otherwise, so there is no existence leak. It verifies the optional `?upload_sha256=` or `X-Upload-SHA256` integrity hash. It then swaps the spool file in as `r.Body`.
 
-Every existing endpoint's routing, project auth, size caps and storage logic therefore runs unchanged.
+The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
 
 The session is consumed on a 2xx response. It is kept for a retry on any other status. A spool lives at `{DataDir}/tmp/uploads/<id>.spool`. It is capped at `BUILDHOST_MAX_UPLOAD_SIZE` **at append time**. It is swept after `BUILDHOST_UPLOAD_SESSION_TTL`, which defaults to 24h. Things sweep: an opportunistic sweep on create, a 15-minute janitor that serve starts, and orphan cleanup at startup.
 
@@ -102,7 +102,7 @@ The CLI's `docker-push` engine pushes a locally built OCI image layout to the OC
 
 It uploads every blob larger than the server's advertised `max_direct_upload_bytes` through the OCI chunked upload session. Each `Content-Range` PATCH appends sequentially and stays under the limit. A digest-checked PUT finalizes the blob. An image layer over a fronting proxy's request-body cap therefore publishes, where the one-request-per-blob upload in docker, buildx and crane cannot. Cloudflare's edge answers 413 to a body near 100 MB.
 
-A reaction to a 413 decids sizing. `--chunk-size` only clamps DOWN from the advertised limit. An interrupted chunk resumes from the server's committed size, read from the 416 `Range` header or from the status GET.
+Sizing is decided up front, from the blob size and server-info, and never by a reaction to a 413. `--chunk-size` only clamps DOWN from the advertised limit. An interrupted chunk resumes from the server's committed size, read from the 416 `Range` header or from the status GET.
 
 A blob the registry already has is skipped after a HEAD. A blob small enough for one request still opens a session, because that POST is what asks for a cross-repo mount. It then finalizes with a single PUT that carries the bytes.
 

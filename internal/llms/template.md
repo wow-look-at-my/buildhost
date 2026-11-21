@@ -78,7 +78,7 @@ That per-combination fan-out applies to a file that is NOT an APE. There the com
 
 The uploaded body can instead carry APE magic while the segments expand to more than one combination. The upload then publishes ONE artifact that covers them all, exactly as the `/artifacts/ape` endpoint below does. It answers with that single artifact JSON object rather than an array. A file that runs on N platforms gets one download link, not N.
 
-One binary can run on SEVERAL platforms. An Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
+One binary can run on SEVERAL platforms. An Actually Portable Executable is such a binary. It boots natively on Linux, macOS and Windows from one file. The registry publishes it as ONE artifact with ONE download link, and not as N rows.
 
 ```
 PUT __BASE_URL__/api/v1/projects/{project}/releases/{version}/artifacts/ape?platforms=linux/amd64,darwin/arm64,windows/amd64
