@@ -1,6 +1,8 @@
 // Uploads one project's artifacts into a release, then publishes the release.
 
 import type { Group, Item } from './artifact-groups';
+import { slotsOf } from './artifact-groups.ts';
+import { existingRelease } from './existing-release.ts';
 import type { Response, Send } from './client';
 
 export interface Core { info(m: string): void; warning(m: string): void; setFailed(m: string): void }
@@ -83,6 +85,13 @@ export async function publishGroup(d: Deps, proj: string, releaseVersion: string
 		record();
 	}
 	const pub = await d.send('POST', `/api/v1/projects/${proj}/releases/${releaseVersion}/publish`);
+	if (pub.status === 409) {
+		// Another job of this run published first.
+		const verdict = await existingRelease(d.send, core, proj, releaseVersion, await slotsOf(group, d.sha256));
+		if (verdict.action === 'noop') return true;
+		core.setFailed(verdict.action === 'fail' ? verdict.message : `Publish ${proj} failed (${pub.status}): ${pub.text}`);
+		return false;
+	}
 	if (pub.status !== 200) { core.setFailed(`Publish ${proj} failed (${pub.status}): ${pub.text}`); return false; }
 	core.info(`Published ${proj}/${releaseVersion} (${group.slots.length + group.portable.length} artifacts) to ${d.server}`);
 	return true;

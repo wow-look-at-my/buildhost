@@ -82,6 +82,50 @@ const slot = (file: string, os: string, arch: string) => ({ file, os, arch });
 		assert.match(h.failed[0], /Upload tool linux\/amd64 failed \(500\)/);
 	}
 
+	{
+		const asked: string[] = [];
+		const failed: string[] = [];
+		const release = JSON.stringify({ published: true, artifacts: [{ os: 'linux', arch: 'amd64', kind: 'binary', sha256: A }] });
+		const deps = {
+			send: async (method: string, url: string) => {
+				asked.push(`${method} ${url}`);
+				if (method === 'POST') return { status: 409, text: '{"error":"release already published"}' };
+				if (method === 'GET') return { status: 200, text: release };
+				return { status: 201, text: '' };
+			},
+			put: async (url: string, file: string) => { asked.push(`PUT ${url} <${file}>`); return { status: 201, text: '' }; },
+			sha256: async () => A,
+			record: () => {},
+			core: { info: () => {}, warning: () => {}, setFailed: (m: string) => { failed.push(m); } },
+			server: 'https://bh',
+		};
+		const ok = await publishGroup(deps, 'tool', '7', { slots: [slot('l', 'linux', 'amd64')], portable: [] });
+		assert.equal(ok, true);
+		assert.deepEqual(failed, []);
+		assert.ok(asked.includes('GET /api/v1/projects/tool/releases/7'));
+	}
+
+	// A concurrent publisher with other bytes fails and names the slot.
+	{
+		const failed: string[] = [];
+		const release = JSON.stringify({ published: true, artifacts: [{ os: 'linux', arch: 'amd64', kind: 'binary', sha256: B }] });
+		const deps = {
+			send: async (method: string) => {
+				if (method === 'POST') return { status: 409, text: '{"error":"release already published"}' };
+				if (method === 'GET') return { status: 200, text: release };
+				return { status: 201, text: '' };
+			},
+			put: async () => ({ status: 201, text: '' }),
+			sha256: async () => A,
+			record: () => {},
+			core: { info: () => {}, warning: () => {}, setFailed: (m: string) => { failed.push(m); } },
+			server: 'https://bh',
+		};
+		const ok = await publishGroup(deps, 'tool', '7', { slots: [slot('l', 'linux', 'amd64')], portable: [] });
+		assert.equal(ok, false);
+		assert.match(failed[0], /already published with other bytes/);
+	}
+
 	// The client retries a transient answer and returns the first real one, with the bearer token.
 	{
 		const statuses = [502, 404, 201];
